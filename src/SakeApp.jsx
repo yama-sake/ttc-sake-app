@@ -280,32 +280,19 @@ const SakeApp = () => {
         );
         const data = await response.json();
         const text = data.responses?.[0]?.fullTextAnnotation?.text || '';
-        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-
+        const lines = [...new Set(text.split('\n').map(l => l.trim()).filter(l => l.length > 0))];
         const categoryKeywords = ['純米大吟醸','純米吟醸','特別純米','純米酒','大吟醸','吟醸','特別本醸造','本醸造','普通酒'];
         let detectedCategory = '';
-        let detectedBrewery = '';
-        let detectedName = '';
-
         for (const line of lines) {
           for (const cat of categoryKeywords) {
             if (line.includes(cat) && !detectedCategory) detectedCategory = cat;
           }
-          if ((line.includes('酒造') || line.includes('酒類') || line.includes('醸造')) && !detectedBrewery) {
-            detectedBrewery = line;
-          }
         }
-        for (const line of lines) {
-          if (line.length >= 2 && line.length <= 20 && !categoryKeywords.some(c => line.includes(c)) && !line.includes('酒造') && !/^\d/.test(line) && !detectedName) {
-            detectedName = line;
-          }
-        }
-
-        setAnalysisResult({ name: detectedName, category: detectedCategory, brewery: detectedBrewery });
+        setAnalysisResult({ name: '', category: detectedCategory, brewery: '', lines });
       } catch (error) {
         console.error('Vision API error:', error);
         alert('❌ 解析に失敗しました。手動で入力してください。');
-        setAnalysisResult({ name: '', category: '', brewery: '' });
+        setAnalysisResult({ name: '', category: '', brewery: '', lines: [] });
       }
       setAnalyzing(false);
     };
@@ -348,7 +335,7 @@ const SakeApp = () => {
       alert('✅ 更新しました');
     };
 
-    const categoryOptions = ['純米大吟醸','純米吟醸','特別純米','純米酒','大吟醸','吟醸','特別本醸造','本醸造','普通酒'];
+    const categoryOptions = ['純米大吟醸','純米吟醸','特別純米','純米酒','大吟醸','吟醸','特別本醸造','本醸造','普通酒','その他','不明'];
 
     return (
       <div className="screen admin-screen">
@@ -389,12 +376,28 @@ const SakeApp = () => {
               </div>
             ) : (
               <div className="confirmation-section">
-                <h3>✅ 内容を確認・修正してください</h3>
-                <p className="confirmation-note">読み取り結果を確認・修正して登録</p>
+                <h3>✅ 読み取り結果から選んでください</h3>
+                <p className="confirmation-note">テキストをタップすると入力欄にセットされます</p>
+                {analysisResult.lines && analysisResult.lines.length > 0 && (
+                  <div className="ocr-lines-box">
+                    <p className="ocr-lines-label">📋 読み取ったテキスト（タップして使用）</p>
+                    <div className="ocr-lines-list">
+                      {analysisResult.lines.map((line, i) => (
+                        <div key={i} className="ocr-line-row">
+                          <span className="ocr-line-text">{line}</span>
+                          <div className="ocr-line-btns">
+                            <button className="ocr-use-btn" onClick={() => setAnalysisResult({...analysisResult, name: line})}>銘柄名</button>
+                            <button className="ocr-use-btn" onClick={() => setAnalysisResult({...analysisResult, brewery: line})}>蔵元</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="result-form">
                   <div className="form-group">
                     <label>銘柄名 *</label>
-                    <input type="text" value={analysisResult.name} onChange={(e) => setAnalysisResult({...analysisResult, name: e.target.value})} placeholder="例: 獺祭 磨き二割三分" />
+                    <input type="text" value={analysisResult.name} onChange={(e) => setAnalysisResult({...analysisResult, name: e.target.value})} placeholder="上のテキストをタップ or 直接入力" />
                   </div>
                   <div className="form-group">
                     <label>特定名称酒 *</label>
@@ -405,7 +408,7 @@ const SakeApp = () => {
                   </div>
                   <div className="form-group">
                     <label>蔵元（都道府県）</label>
-                    <input type="text" value={analysisResult.brewery} onChange={(e) => setAnalysisResult({...analysisResult, brewery: e.target.value})} placeholder="例: 旭酒造（山口県）" />
+                    <input type="text" value={analysisResult.brewery} onChange={(e) => setAnalysisResult({...analysisResult, brewery: e.target.value})} placeholder="上のテキストをタップ or 直接入力" />
                   </div>
                 </div>
                 <div className="confirmation-buttons">
@@ -487,9 +490,9 @@ const SakeApp = () => {
       {id:'all',name:'すべて'},{id:'純米大吟醸',name:'純米大吟醸'},{id:'純米吟醸',name:'純米吟醸'},
       {id:'特別純米',name:'特別純米'},{id:'純米酒',name:'純米酒'},{id:'大吟醸',name:'大吟醸'},
       {id:'吟醸',name:'吟醸'},{id:'特別本醸造',name:'特別本醸造'},{id:'本醸造',name:'本醸造'},
-      {id:'普通酒',name:'普通酒'},{id:'その他',name:'その他'}
+      {id:'普通酒',name:'普通酒'},{id:'その他',name:'その他'},{id:'不明',name:'不明'}
     ];
-    const knownCats = ['純米大吟醸','純米吟醸','特別本醸造','大吟醸','吟醸','純米酒','特別純米','本醸造','普通酒'];
+    const knownCats = ['純米大吟醸','純米吟醸','特別本醸造','大吟醸','吟醸','純米酒','特別純米','本醸造','普通酒','その他','不明'];
     const filteredSakes = filterCategory === 'all' ? sakes
       : filterCategory === 'その他' ? sakes.filter(s => !knownCats.includes(s.category))
       : sakes.filter(s => s.category === filterCategory);
@@ -1165,6 +1168,14 @@ const SakeApp = () => {
 .ranking-score-val{font-size:22px;font-weight:700;color:#ff9800}
 .ranking-score-unit{font-size:12px;color:#999;margin-left:2px}
 .participant-avatar{width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#7fb3d5 0%,#6d8ca6 100%);color:white;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px;flex-shrink:0}
+.ocr-lines-box{background:#f0f8ff;border-radius:12px;padding:16px;margin-bottom:20px;border:1px solid #b3d9f5}
+.ocr-lines-label{font-size:13px;font-weight:600;color:#1976d2;margin-bottom:12px}
+.ocr-lines-list{display:flex;flex-direction:column;gap:8px;max-height:200px;overflow-y:auto}
+.ocr-line-row{display:flex;justify-content:space-between;align-items:center;gap:8px;background:white;padding:8px 12px;border-radius:8px;border:1px solid #e0e0e0}
+.ocr-line-text{font-size:14px;color:#333;flex:1;word-break:break-all}
+.ocr-line-btns{display:flex;gap:6px;flex-shrink:0}
+.ocr-use-btn{padding:4px 10px;background:#e3f2fd;color:#1976d2;border:1px solid #1976d2;border-radius:12px;font-size:11px;cursor:pointer;white-space:nowrap}
+.ocr-use-btn:active{background:#1976d2;color:white}
       `}</style>
     </div>
   );
