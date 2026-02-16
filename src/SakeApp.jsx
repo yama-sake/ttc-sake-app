@@ -210,22 +210,20 @@ const SakeApp = () => {
   );
 
   // ===== 管理者画面 =====
+  const VISION_API_KEY = "AIzaSyAhPGRB5-rQR56BrI-b8QQYK6DD-cpzXO8";
+
   const AdminScreen = () => {
     const [frontImage, setFrontImage] = useState(null);
     const [backImage, setBackImage] = useState(null);
     const [analyzing, setAnalyzing] = useState(false);
-    const [progressMessage, setProgressMessage] = useState('');
     const [analysisResult, setAnalysisResult] = useState(null);
     const [showSakeList, setShowSakeList] = useState(false);
     const [adminSakes, setAdminSakes] = useState([]);
     const [deleteConfirm, setDeleteConfirm] = useState(null);
     const [editingSake, setEditingSake] = useState(null);
-    const [apiKey, setApiKey] = useState('');
-    const [showApiKeyInput, setShowApiKeyInput] = useState(false);
+    const [saving, setSaving] = useState(false);
 
     useEffect(() => {
-      const savedKey = localStorage.getItem('sakeApp_apiKey');
-      if (savedKey) setApiKey(savedKey);
       if (showSakeList) loadAdminSakes();
     }, [showSakeList]);
 
@@ -255,9 +253,8 @@ const SakeApp = () => {
         const reader = new FileReader();
         reader.onload = async (e) => {
           const compressed = await compressImage(e.target.result);
-          if (type === 'front') setFrontImage(compressed);
+          if (type === 'front') { setFrontImage(compressed); setAnalysisResult(null); }
           else setBackImage(compressed);
-          setAnalysisResult(null); setAnalyzing(false); setProgressMessage('');
         };
         reader.readAsDataURL(file);
       }
@@ -265,62 +262,63 @@ const SakeApp = () => {
 
     const analyzeSake = async () => {
       if (!frontImage) { alert('表ラベルの写真を撮影してください'); return; }
-      const key = apiKey || localStorage.getItem('sakeApp_apiKey');
-      if (!key) { setShowApiKeyInput(true); return; }
-
-      setAnalyzing(true); setProgressMessage('画像を準備中...'); setAnalysisResult(null);
+      setAnalyzing(true);
       try {
-        setProgressMessage('AIが画像を解析しています...');
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('タイムアウト')), 30000));
-        const apiPromise = fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": key,
-            "anthropic-version": "2023-06-01",
-            "anthropic-dangerous-direct-browser-calls": "true"
-          },
-          body: JSON.stringify({
-            model: "claude-opus-4-5-20251101",
-            max_tokens: 1000,
-            messages: [{
-              role: "user",
-              content: [
-                { type: "image", source: { type: "base64", media_type: "image/jpeg", data: frontImage.split(',')[1] } },
-                { type: "text", text: 'この日本酒のラベル画像から、以下の情報を抽出してください。読み取れない項目がある場合は「不明」としてください。\n\n回答は必ず以下のJSON形式のみで返してください：\n\n{\n  "name": "銘柄名",\n  "category": "特定名称酒",\n  "brewery": "蔵元名（都道府県名）"\n}' }
-              ]
-            }]
-          })
-        });
-        const response = await Promise.race([apiPromise, timeoutPromise]);
-        setProgressMessage('解析結果を処理中...');
+        const base64Data = frontImage.split(',')[1];
+        const response = await fetch(
+          `https://vision.googleapis.com/v1/images:annotate?key=${VISION_API_KEY}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              requests: [{
+                image: { content: base64Data },
+                features: [{ type: 'TEXT_DETECTION', maxResults: 1 }]
+              }]
+            })
+          }
+        );
         const data = await response.json();
-        if (data.error) throw new Error('API Error: ' + (data.error.message || 'Unknown'));
-        const textContent = data.content?.find(item => item.type === 'text');
-        if (!textContent) throw new Error('AI解析結果が取得できませんでした');
-        let jsonText = textContent.text.trim()
-          .replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-        const sakeInfo = JSON.parse(jsonText);
-        setAnalysisResult({ name: sakeInfo.name || '', category: sakeInfo.category || '', brewery: sakeInfo.brewery || '' });
-        setAnalyzing(false); setProgressMessage('');
+        const text = data.responses?.[0]?.fullTextAnnotation?.text || '';
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+        const categoryKeywords = ['純米大吟醸','純米吟醸','特別純米','純米酒','大吟醸','吟醸','特別本醸造','本醸造','普通酒'];
+        let detectedCategory = '';
+        let detectedBrewery = '';
+        let detectedName = '';
+
+        for (const line of lines) {
+          for (const cat of categoryKeywords) {
+            if (line.includes(cat) && !detectedCategory) detectedCategory = cat;
+          }
+          if ((line.includes('酒造') || line.includes('酒類') || line.includes('醸造')) && !detectedBrewery) {
+            detectedBrewery = line;
+          }
+        }
+        for (const line of lines) {
+          if (line.length >= 2 && line.length <= 20 && !categoryKeywords.some(c => line.includes(c)) && !line.includes('酒造') && !/^\d/.test(line) && !detectedName) {
+            detectedName = line;
+          }
+        }
+
+        setAnalysisResult({ name: detectedName, category: detectedCategory, brewery: detectedBrewery });
       } catch (error) {
-        console.error('Analysis error:', error);
-        setAnalyzing(false); setProgressMessage('');
-        let msg = '❌ AI解析中にエラーが発生しました\n\n';
-        if (error.message.includes('タイムアウト')) msg += '⏱️ 解析に時間がかかりすぎています。';
-        else if (error.message.includes('Failed to fetch')) msg += '🌐 ネットワークエラー';
-        else msg += '詳細: ' + error.message;
-        alert(msg);
+        console.error('Vision API error:', error);
+        alert('❌ 解析に失敗しました。手動で入力してください。');
+        setAnalysisResult({ name: '', category: '', brewery: '' });
       }
+      setAnalyzing(false);
     };
 
     const saveSakeEntry = async () => {
-      if (!analysisResult) return;
+      if (!analysisResult.name.trim()) { alert('銘柄名を入力してください'); return; }
+      if (!analysisResult.category) { alert('カテゴリーを選択してください'); return; }
+      setSaving(true);
       const newSake = {
         id: Date.now().toString(),
-        name: analysisResult.name,
+        name: analysisResult.name.trim(),
         category: analysisResult.category,
-        brewery: analysisResult.brewery,
+        brewery: analysisResult.brewery.trim(),
         frontImage,
         backImage,
         rating: 0,
@@ -330,6 +328,7 @@ const SakeApp = () => {
       await saveSake(newSake);
       alert('✅ 登録が完了しました！\n\n📝 銘柄: ' + newSake.name + '\n🏷️ カテゴリー: ' + newSake.category + '\n🏭 蔵元: ' + newSake.brewery);
       setAnalysisResult(null); setFrontImage(null); setBackImage(null);
+      setSaving(false);
     };
 
     const deleteSakeEntry = async (sakeId) => {
@@ -358,28 +357,13 @@ const SakeApp = () => {
           <h2>【管理者】銘柄登録</h2>
           <div style={{width:24}} />
         </div>
-        {showApiKeyInput && (
-          <div className="modal-overlay">
-            <div className="modal-content">
-              <h3>🔑 APIキー設定</h3>
-              <p className="modal-text">AnthropicのAPIキーを入力してください</p>
-              <div className="form-group">
-                <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="sk-ant-..." />
-              </div>
-              <div className="modal-buttons">
-                <button className="modal-btn save-btn" onClick={() => { localStorage.setItem('sakeApp_apiKey', apiKey); setShowApiKeyInput(false); }}>保存して解析</button>
-                <button className="modal-btn cancel-confirm-btn" onClick={() => setShowApiKeyInput(false)}>キャンセル</button>
-              </div>
-            </div>
-          </div>
-        )}
         {!showSakeList ? (
           <div className="admin-content">
             {!analysisResult ? (
               <div>
                 <div className="scan-instruction">
                   <h3>日本酒のラベルを撮影</h3>
-                  <p>AIがラベルから銘柄情報を解析します。</p>
+                  <p>ラベルから銘柄情報を自動読み取りします</p>
                 </div>
                 <div className="label-upload-section">
                   <div className="upload-box">
@@ -398,27 +382,22 @@ const SakeApp = () => {
                   </div>
                 </div>
                 <button className="analyze-btn" onClick={analyzeSake} disabled={analyzing || !frontImage}>
-                  {analyzing ? progressMessage || '解析中...' : '📸 解析して登録'}
+                  {analyzing ? '読み取り中...' : '📸 ラベルを読み取る'}
                 </button>
-                {analyzing && (
-                  <div className="progress-indicator">
-                    <div className="spinner"></div>
-                    <p>{progressMessage}</p>
-                  </div>
-                )}
+                {analyzing && <div className="progress-indicator"><div className="spinner"></div><p>ラベルを解析中...</p></div>}
                 <button className="manage-btn" onClick={() => setShowSakeList(true)}>📋 登録済み銘柄を管理</button>
               </div>
             ) : (
               <div className="confirmation-section">
-                <h3>✅ 解析結果を確認してください</h3>
-                <p className="confirmation-note">間違いがあれば修正できます</p>
+                <h3>✅ 内容を確認・修正してください</h3>
+                <p className="confirmation-note">読み取り結果を確認・修正して登録</p>
                 <div className="result-form">
                   <div className="form-group">
-                    <label>銘柄名</label>
+                    <label>銘柄名 *</label>
                     <input type="text" value={analysisResult.name} onChange={(e) => setAnalysisResult({...analysisResult, name: e.target.value})} placeholder="例: 獺祭 磨き二割三分" />
                   </div>
                   <div className="form-group">
-                    <label>特定名称酒</label>
+                    <label>特定名称酒 *</label>
                     <select value={analysisResult.category} onChange={(e) => setAnalysisResult({...analysisResult, category: e.target.value})}>
                       <option value="">選択してください</option>
                       {categoryOptions.map(c => <option key={c} value={c}>{c}</option>)}
@@ -430,7 +409,9 @@ const SakeApp = () => {
                   </div>
                 </div>
                 <div className="confirmation-buttons">
-                  <button className="save-btn" onClick={saveSakeEntry}>💾 この内容で登録</button>
+                  <button className="save-btn" onClick={saveSakeEntry} disabled={saving}>
+                    {saving ? '登録中...' : '💾 この内容で登録'}
+                  </button>
                   <button className="cancel-btn" onClick={() => { setAnalysisResult(null); setFrontImage(null); setBackImage(null); }}>❌ キャンセル</button>
                 </div>
               </div>
