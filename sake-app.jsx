@@ -1,6 +1,37 @@
-import React, { useState, useEffect } from 'react';
-import { Camera, Settings, Home, Clipboard, User, ChevronLeft, Search, Plus, Trophy } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Camera, Settings, Home, Clipboard, User, ChevronLeft, Search, Trophy } from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { getDatabase, ref, set, get, remove, child, onValue } from 'firebase/database';
 
+// ===== Firebase設定 =====
+const firebaseConfig = {
+  apiKey: "AIzaSyAhPGRB5-rQR56BrI-b8QQYK6DD-cpzXO8",
+  authDomain: "ttc-sake-app.firebaseapp.com",
+  databaseURL: "https://ttc-sake-app-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "ttc-sake-app",
+  storageBucket: "ttc-sake-app.firebasestorage.app",
+  messagingSenderId: "311700112558",
+  appId: "1:311700112558:web:a3f13541a39f286362193f"
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const database = getDatabase(firebaseApp);
+
+// ===== Firebase操作ヘルパー =====
+const dbGet = async (path) => {
+  const snapshot = await get(ref(database, path));
+  return snapshot.exists() ? snapshot.val() : null;
+};
+
+const dbSet = async (path, value) => {
+  await set(ref(database, path), value);
+};
+
+const dbRemove = async (path) => {
+  await remove(ref(database, path));
+};
+
+// ===== メインアプリ =====
 const SakeApp = () => {
   const [currentScreen, setCurrentScreen] = useState('splash');
   const [mode, setMode] = useState(null);
@@ -12,99 +43,97 @@ const SakeApp = () => {
   const [editingReport, setEditingReport] = useState(null);
   const [editingReportKey, setEditingReportKey] = useState(null);
 
+  // 管理者画面への隠しアクセス（徳利5回タップ）
+  const tokkuriTapCount = useRef(0);
+  const tokkuriTapTimer = useRef(null);
+
   useEffect(() => {
     loadSakes();
-    loadUserName();
+    loadUserNameLocal();
   }, []);
 
-  const loadUserName = async () => {
-    try {
-      const result = await window.storage.get('userName', false);
-      if (result?.value) { setUserName(result.value); }
-    } catch (error) { console.log('No userName stored yet'); }
+  // 名前はlocalStorageに保存（端末ごと）
+  const loadUserNameLocal = () => {
+    const name = localStorage.getItem('sakeApp_userName');
+    if (name) setUserName(name);
   };
 
-  const saveUserName = async (name) => {
-    try {
-      await window.storage.set('userName', name, false);
-      setUserName(name);
-      setShowNameInput(false);
-    } catch (error) { console.error('Error saving userName:', error); }
+  const saveUserNameLocal = (name) => {
+    localStorage.setItem('sakeApp_userName', name);
+    setUserName(name);
+    setShowNameInput(false);
   };
 
+  // 銘柄一覧をFirebaseから読み込み
   const loadSakes = async () => {
     try {
-      const keys = await window.storage.list('sake:', true);
-      if (keys?.keys) {
-        const loaded = await Promise.all(keys.keys.map(async (key) => {
-          const result = await window.storage.get(key, true);
-          return result ? JSON.parse(result.value) : null;
-        }));
-        setSakes(loaded.filter(Boolean));
+      const data = await dbGet('sakes');
+      if (data) {
+        setSakes(Object.values(data).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)));
+      } else {
+        setSakes([]);
       }
-    } catch (error) { console.log('Loading sakes:', error); }
+    } catch (error) {
+      console.error('銘柄読み込みエラー:', error);
+    }
   };
 
   const saveSake = async (sake) => {
-    try {
-      await window.storage.set(`sake:${sake.id}`, JSON.stringify(sake), true);
-      await loadSakes();
-    } catch (error) { console.error('Error saving sake:', error); }
+    await dbSet(`sakes/${sake.id}`, sake);
+    await loadSakes();
   };
 
   const saveReport = async (sakeId, report) => {
-    try {
-      await window.storage.set(`report:${sakeId}:${Date.now()}`, JSON.stringify(report), true);
-    } catch (error) { console.error('Error saving report:', error); }
+    const key = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    await dbSet(`reports/${sakeId}/${key}`, { ...report, key });
+    return key;
   };
 
   const loadReports = async (sakeId) => {
-    try {
-      const keys = await window.storage.list(`report:${sakeId}:`, true);
-      if (keys?.keys) {
-        const reports = await Promise.all(keys.keys.map(async (key) => {
-          const result = await window.storage.get(key, true);
-          return result ? JSON.parse(result.value) : null;
-        }));
-        return reports.filter(Boolean);
-      }
-      return [];
-    } catch (error) { return []; }
+    const data = await dbGet(`reports/${sakeId}`);
+    return data ? Object.values(data) : [];
   };
 
   const loadAllReports = async () => {
-    try {
-      const keys = await window.storage.list('report:', true);
-      if (keys?.keys) {
-        const reports = await Promise.all(keys.keys.map(async (key) => {
-          const result = await window.storage.get(key, true);
-          return result ? JSON.parse(result.value) : null;
-        }));
-        return reports.filter(Boolean);
-      }
-      return [];
-    } catch (error) { return []; }
+    const data = await dbGet('reports');
+    if (!data) return [];
+    const allReports = [];
+    Object.values(data).forEach(sakeReports => {
+      Object.values(sakeReports).forEach(report => {
+        allReports.push(report);
+      });
+    });
+    return allReports;
   };
 
+  // 徳利タップカウント
+  const handleTokkuriTap = () => {
+    tokkuriTapCount.current += 1;
+    if (tokkuriTapTimer.current) clearTimeout(tokkuriTapTimer.current);
+    tokkuriTapTimer.current = setTimeout(() => {
+      tokkuriTapCount.current = 0;
+    }, 2000);
+    if (tokkuriTapCount.current >= 5) {
+      tokkuriTapCount.current = 0;
+      setMode('admin');
+      setCurrentScreen('admin');
+    }
+  };
+
+  // ===== 徳利SVG =====
   const TokkuriSVG = ({ width = 100, height = 100, color = "#2c3e50" }) => (
     <svg width={width} height={height} viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-      {/* 徳利の首（細く） */}
       <path d="M85 20 Q85 18 87 18 L113 18 Q115 18 115 20 L115 55 Q115 58 113 58 L87 58 Q85 58 85 55 Z" fill={color}/>
-      
-      {/* 徳利の胴体（洗練されたフォルム） */}
       <ellipse cx="100" cy="65" rx="18" ry="8" fill={color}/>
       <path d="M82 65 Q75 75 68 95 Q60 120 60 145 Q60 165 75 175 Q85 182 100 182 Q115 182 125 175 Q140 165 140 145 Q140 120 132 95 Q125 75 118 65 Z" fill={color}/>
-      
-      {/* 徳利の底 */}
       <ellipse cx="100" cy="182" rx="40" ry="6" fill={color}/>
-      
-      {/* おちょこ */}
       <ellipse cx="155" cy="150" rx="20" ry="6" fill={color}/>
       <path d="M135 150 L135 165 Q135 168 137 168 L173 168 Q175 168 175 165 L175 150 Z" fill={color}/>
       <ellipse cx="155" cy="168" rx="20" ry="5" fill={color}/>
     </svg>
   );
 
+  // ===== スプラッシュ画面 =====
   const SplashScreen = () => (
     <div className="screen splash-screen">
       <div className="splash-content">
@@ -124,6 +153,7 @@ const SakeApp = () => {
     </div>
   );
 
+  // ===== 名前入力モーダル =====
   const NameInputModal = () => {
     const [tempName, setTempName] = useState('');
     return (
@@ -132,30 +162,54 @@ const SakeApp = () => {
           <h3>👤 お名前を入力してください</h3>
           <p className="modal-text">テイスティングレポートに表示されます</p>
           <div className="form-group">
-            <input type="text" value={tempName} onChange={(e) => setTempName(e.target.value)} placeholder="例: 田中" autoFocus />
+            <input
+              type="text"
+              value={tempName}
+              onChange={(e) => setTempName(e.target.value)}
+              placeholder="例: 田中"
+              autoFocus
+              onKeyDown={(e) => { if (e.key === 'Enter' && tempName.trim()) saveUserNameLocal(tempName.trim()); }}
+            />
           </div>
-          <button className="modal-btn save-btn" onClick={() => { if (tempName.trim()) saveUserName(tempName.trim()); }} disabled={!tempName.trim()}>保存</button>
+          <button
+            className="modal-btn save-btn"
+            onClick={() => { if (tempName.trim()) saveUserNameLocal(tempName.trim()); }}
+            disabled={!tempName.trim()}
+          >保存</button>
         </div>
       </div>
     );
   };
 
+  // ===== ホーム画面 =====
   const HomeScreen = () => (
     <div className="screen home-screen">
       <div className="header">
         <h2>SAKE BOOK</h2>
         <Settings size={24} className="settings-icon" onClick={() => setShowNameInput(true)} />
       </div>
-      {userName && (<div className="user-greeting"><p>ようこそ、<strong>{userName}</strong>さん</p></div>)}
+      {userName && (
+        <div className="user-greeting">
+          <p>ようこそ、<strong>{userName}</strong>さん</p>
+        </div>
+      )}
       <div className="mode-selection">
-        <div className="sake-icon-circle"><TokkuriSVG width={80} height={80} color="#2c3e50" /></div>
+        <div className="sake-icon-circle" onClick={handleTokkuriTap} style={{ cursor: 'pointer' }}>
+          <TokkuriSVG width={80} height={80} color="#2c3e50" />
+        </div>
         <h3>ご利用モードの選択</h3>
-        <button className="mode-btn admin-btn" onClick={() => { setMode('admin'); setCurrentScreen('admin'); }}>管理者の方はこちら</button>
-        <button className="mode-btn participant-btn" onClick={() => { if (!userName) { setShowNameInput(true); } else { setMode('participant'); setCurrentScreen('sakeList'); } }}>参加者の方はこちら</button>
+        <button
+          className="mode-btn participant-btn"
+          onClick={() => {
+            if (!userName) { setShowNameInput(true); }
+            else { setMode('participant'); setCurrentScreen('sakeList'); }
+          }}
+        >参加者の方はこちら</button>
       </div>
     </div>
   );
 
+  // ===== 管理者画面 =====
   const AdminScreen = () => {
     const [frontImage, setFrontImage] = useState(null);
     const [backImage, setBackImage] = useState(null);
@@ -166,20 +220,18 @@ const SakeApp = () => {
     const [adminSakes, setAdminSakes] = useState([]);
     const [deleteConfirm, setDeleteConfirm] = useState(null);
     const [editingSake, setEditingSake] = useState(null);
+    const [apiKey, setApiKey] = useState('');
+    const [showApiKeyInput, setShowApiKeyInput] = useState(false);
 
-    useEffect(() => { if (showSakeList) loadAdminSakes(); }, [showSakeList]);
+    useEffect(() => {
+      const savedKey = localStorage.getItem('sakeApp_apiKey');
+      if (savedKey) setApiKey(savedKey);
+      if (showSakeList) loadAdminSakes();
+    }, [showSakeList]);
 
     const loadAdminSakes = async () => {
-      try {
-        const keys = await window.storage.list('sake:', true);
-        if (keys?.keys) {
-          const loaded = await Promise.all(keys.keys.map(async (key) => {
-            const result = await window.storage.get(key, true);
-            return result ? JSON.parse(result.value) : null;
-          }));
-          setAdminSakes(loaded.filter(Boolean));
-        }
-      } catch (error) { console.log('Loading sakes:', error); }
+      const data = await dbGet('sakes');
+      setAdminSakes(data ? Object.values(data).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)) : []);
     };
 
     const compressImage = (base64Image, maxWidth = 800) => {
@@ -191,7 +243,7 @@ const SakeApp = () => {
           if (w > maxWidth) { h = (h * maxWidth) / w; w = maxWidth; }
           canvas.width = w; canvas.height = h;
           canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-          resolve(canvas.toDataURL('image/jpeg', 0.8));
+          resolve(canvas.toDataURL('image/jpeg', 0.6));
         };
         img.src = base64Image;
       });
@@ -203,7 +255,8 @@ const SakeApp = () => {
         const reader = new FileReader();
         reader.onload = async (e) => {
           const compressed = await compressImage(e.target.result);
-          if (type === 'front') setFrontImage(compressed); else setBackImage(compressed);
+          if (type === 'front') setFrontImage(compressed);
+          else setBackImage(compressed);
           setAnalysisResult(null); setAnalyzing(false); setProgressMessage('');
         };
         reader.readAsDataURL(file);
@@ -212,35 +265,47 @@ const SakeApp = () => {
 
     const analyzeSake = async () => {
       if (!frontImage) { alert('表ラベルの写真を撮影してください'); return; }
+      const key = apiKey || localStorage.getItem('sakeApp_apiKey');
+      if (!key) { setShowApiKeyInput(true); return; }
+
       setAnalyzing(true); setProgressMessage('画像を準備中...'); setAnalysisResult(null);
       try {
         setProgressMessage('AIが画像を解析しています...');
         const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('タイムアウト')), 30000));
         const apiPromise = fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST", headers: { "Content-Type": "application/json" },
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": key,
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-calls": "true"
+          },
           body: JSON.stringify({
-            model: "claude-sonnet-4-20250514", max_tokens: 1000,
-            messages: [{ role: "user", content: [
-              { type: "image", source: { type: "base64", media_type: "image/jpeg", data: frontImage.split(',')[1] } },
-              { type: "text", text: 'この日本酒のラベル画像から、以下の情報を抽出してください。読み取れない項目がある場合は「不明」としてください。\n\n回答は必ず以下のJSON形式のみで返してください：\n\n{\n  "name": "銘柄名",\n  "category": "特定名称酒",\n  "brewery": "蔵元名（都道府県名）"\n}' }
-            ]}]
+            model: "claude-opus-4-5-20251101",
+            max_tokens: 1000,
+            messages: [{
+              role: "user",
+              content: [
+                { type: "image", source: { type: "base64", media_type: "image/jpeg", data: frontImage.split(',')[1] } },
+                { type: "text", text: 'この日本酒のラベル画像から、以下の情報を抽出してください。読み取れない項目がある場合は「不明」としてください。\n\n回答は必ず以下のJSON形式のみで返してください：\n\n{\n  "name": "銘柄名",\n  "category": "特定名称酒",\n  "brewery": "蔵元名（都道府県名）"\n}' }
+              ]
+            }]
           })
         });
         const response = await Promise.race([apiPromise, timeoutPromise]);
         setProgressMessage('解析結果を処理中...');
         const data = await response.json();
         if (data.error) throw new Error('API Error: ' + (data.error.message || 'Unknown'));
-        if (!data.content || data.content.length === 0) throw new Error('AI解析に失敗しました');
-        const textContent = data.content.find(item => item.type === 'text');
+        const textContent = data.content?.find(item => item.type === 'text');
         if (!textContent) throw new Error('AI解析結果が取得できませんでした');
-        let jsonText = textContent.text.trim();
-        if (jsonText.startsWith('```json')) jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-        else if (jsonText.startsWith('```')) jsonText = jsonText.replace(/```\n?/g, '').trim();
+        let jsonText = textContent.text.trim()
+          .replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
         const sakeInfo = JSON.parse(jsonText);
         setAnalysisResult({ name: sakeInfo.name || '', category: sakeInfo.category || '', brewery: sakeInfo.brewery || '' });
         setAnalyzing(false); setProgressMessage('');
       } catch (error) {
-        console.error('Analysis error:', error); setAnalyzing(false); setProgressMessage('');
+        console.error('Analysis error:', error);
+        setAnalyzing(false); setProgressMessage('');
         let msg = '❌ AI解析中にエラーが発生しました\n\n';
         if (error.message.includes('タイムアウト')) msg += '⏱️ 解析に時間がかかりすぎています。';
         else if (error.message.includes('Failed to fetch')) msg += '🌐 ネットワークエラー';
@@ -251,102 +316,182 @@ const SakeApp = () => {
 
     const saveSakeEntry = async () => {
       if (!analysisResult) return;
-      const newSake = { id: Date.now().toString(), name: analysisResult.name, category: analysisResult.category, brewery: analysisResult.brewery, frontImage, backImage, rating: 0, reportCount: 0, createdAt: new Date().toISOString() };
+      const newSake = {
+        id: Date.now().toString(),
+        name: analysisResult.name,
+        category: analysisResult.category,
+        brewery: analysisResult.brewery,
+        frontImage,
+        backImage,
+        rating: 0,
+        reportCount: 0,
+        createdAt: new Date().toISOString()
+      };
       await saveSake(newSake);
       alert('✅ 登録が完了しました！\n\n📝 銘柄: ' + newSake.name + '\n🏷️ カテゴリー: ' + newSake.category + '\n🏭 蔵元: ' + newSake.brewery);
-      setAnalysisResult(null); setFrontImage(null); setBackImage(null); setAnalyzing(false); setProgressMessage('');
+      setAnalysisResult(null); setFrontImage(null); setBackImage(null);
     };
 
-    const deleteSake = async (sakeId) => {
-      try {
-        await window.storage.delete('sake:' + sakeId, true);
-        try {
-          const rk = await window.storage.list('report:' + sakeId + ':', true);
-          if (rk?.keys?.length > 0) await Promise.all(rk.keys.map(k => window.storage.delete(k, true)));
-        } catch (e) {}
-        setDeleteConfirm(null); await loadAdminSakes(); await loadSakes();
-      } catch (error) { setDeleteConfirm(null); alert('❌ 削除に失敗しました'); }
+    const deleteSakeEntry = async (sakeId) => {
+      await dbRemove(`sakes/${sakeId}`);
+      await dbRemove(`reports/${sakeId}`);
+      setDeleteConfirm(null);
+      await loadAdminSakes();
+      await loadSakes();
     };
 
-    const updateSake = async () => {
+    const updateSakeEntry = async () => {
       if (!editingSake) return;
-      try { await saveSake(editingSake); await loadAdminSakes(); await loadSakes(); setEditingSake(null); alert('✅ 更新しました'); }
-      catch (error) { alert('❌ 更新に失敗しました'); }
+      await saveSake(editingSake);
+      await loadAdminSakes();
+      await loadSakes();
+      setEditingSake(null);
+      alert('✅ 更新しました');
     };
 
     const categoryOptions = ['純米大吟醸','純米吟醸','特別純米','純米酒','大吟醸','吟醸','特別本醸造','本醸造','普通酒'];
 
     return (
       <div className="screen admin-screen">
-        <div className="header"><ChevronLeft size={24} onClick={() => setCurrentScreen('home')} /><h2>【管理者】銘柄スキャン登録</h2></div>
+        <div className="header">
+          <ChevronLeft size={24} onClick={() => setCurrentScreen('home')} />
+          <h2>【管理者】銘柄登録</h2>
+          <div style={{width:24}} />
+        </div>
+        {showApiKeyInput && (
+          <div className="modal-overlay">
+            <div className="modal-content">
+              <h3>🔑 APIキー設定</h3>
+              <p className="modal-text">AnthropicのAPIキーを入力してください</p>
+              <div className="form-group">
+                <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="sk-ant-..." />
+              </div>
+              <div className="modal-buttons">
+                <button className="modal-btn save-btn" onClick={() => { localStorage.setItem('sakeApp_apiKey', apiKey); setShowApiKeyInput(false); }}>保存して解析</button>
+                <button className="modal-btn cancel-confirm-btn" onClick={() => setShowApiKeyInput(false)}>キャンセル</button>
+              </div>
+            </div>
+          </div>
+        )}
         {!showSakeList ? (
           <div className="admin-content">
             {!analysisResult ? (
               <div>
-                <div className="scan-instruction"><h3>日本酒のラベルを撮影</h3><p>AIがラベルから銘柄情報を解析します。</p></div>
+                <div className="scan-instruction">
+                  <h3>日本酒のラベルを撮影</h3>
+                  <p>AIがラベルから銘柄情報を解析します。</p>
+                </div>
                 <div className="label-upload-section">
                   <div className="upload-box">
                     <input type="file" accept="image/*" id="front-upload" onChange={(e) => handleImageUpload('front', e)} style={{display:'none'}} />
-                    <label htmlFor="front-upload" className="upload-label">{frontImage ? <img src={frontImage} alt="Front" className="uploaded-image" /> : <div className="camera-placeholder"><Camera size={48} /></div>}</label>
+                    <label htmlFor="front-upload" className="upload-label">
+                      {frontImage ? <img src={frontImage} alt="Front" className="uploaded-image" /> : <div className="camera-placeholder"><Camera size={48} /></div>}
+                    </label>
                     <p>表ラベル</p>
                   </div>
                   <div className="upload-box">
                     <input type="file" accept="image/*" id="back-upload" onChange={(e) => handleImageUpload('back', e)} style={{display:'none'}} />
-                    <label htmlFor="back-upload" className="upload-label">{backImage ? <img src={backImage} alt="Back" className="uploaded-image" /> : <div className="camera-placeholder"><Camera size={48} /></div>}</label>
-                    <p>裏ラベル</p>
+                    <label htmlFor="back-upload" className="upload-label">
+                      {backImage ? <img src={backImage} alt="Back" className="uploaded-image" /> : <div className="camera-placeholder"><Camera size={48} /></div>}
+                    </label>
+                    <p>裏ラベル（任意）</p>
                   </div>
                 </div>
-                <button className="analyze-btn" onClick={analyzeSake} disabled={analyzing || !frontImage}>{analyzing ? progressMessage || '解析中...' : '📸 解析して登録'}</button>
-                {analyzing && <div className="progress-indicator"><div className="spinner"></div><p>{progressMessage}</p></div>}
+                <button className="analyze-btn" onClick={analyzeSake} disabled={analyzing || !frontImage}>
+                  {analyzing ? progressMessage || '解析中...' : '📸 解析して登録'}
+                </button>
+                {analyzing && (
+                  <div className="progress-indicator">
+                    <div className="spinner"></div>
+                    <p>{progressMessage}</p>
+                  </div>
+                )}
                 <button className="manage-btn" onClick={() => setShowSakeList(true)}>📋 登録済み銘柄を管理</button>
               </div>
             ) : (
               <div className="confirmation-section">
-                <h3>✅ 解析結果を確認してください</h3><p className="confirmation-note">間違いがあれば修正できます</p>
+                <h3>✅ 解析結果を確認してください</h3>
+                <p className="confirmation-note">間違いがあれば修正できます</p>
                 <div className="result-form">
-                  <div className="form-group"><label>銘柄名</label><input type="text" value={analysisResult.name} onChange={(e) => setAnalysisResult({...analysisResult, name: e.target.value})} placeholder="例: 獺祭 磨き二割三分" /></div>
-                  <div className="form-group"><label>特定名称酒</label><select value={analysisResult.category} onChange={(e) => setAnalysisResult({...analysisResult, category: e.target.value})}><option value="">選択してください</option>{categoryOptions.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                  <div className="form-group"><label>蔵元（都道府県）</label><input type="text" value={analysisResult.brewery} onChange={(e) => setAnalysisResult({...analysisResult, brewery: e.target.value})} placeholder="例: 旭酒造（山口県）" /></div>
+                  <div className="form-group">
+                    <label>銘柄名</label>
+                    <input type="text" value={analysisResult.name} onChange={(e) => setAnalysisResult({...analysisResult, name: e.target.value})} placeholder="例: 獺祭 磨き二割三分" />
+                  </div>
+                  <div className="form-group">
+                    <label>特定名称酒</label>
+                    <select value={analysisResult.category} onChange={(e) => setAnalysisResult({...analysisResult, category: e.target.value})}>
+                      <option value="">選択してください</option>
+                      {categoryOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>蔵元（都道府県）</label>
+                    <input type="text" value={analysisResult.brewery} onChange={(e) => setAnalysisResult({...analysisResult, brewery: e.target.value})} placeholder="例: 旭酒造（山口県）" />
+                  </div>
                 </div>
                 <div className="confirmation-buttons">
                   <button className="save-btn" onClick={saveSakeEntry}>💾 この内容で登録</button>
-                  <button className="cancel-btn" onClick={() => { setAnalysisResult(null); setFrontImage(null); setBackImage(null); setAnalyzing(false); setProgressMessage(''); }}>❌ キャンセル</button>
+                  <button className="cancel-btn" onClick={() => { setAnalysisResult(null); setFrontImage(null); setBackImage(null); }}>❌ キャンセル</button>
                 </div>
               </div>
             )}
           </div>
         ) : (
           <div className="admin-content">
-            <div className="admin-list-header"><h3>登録済み銘柄一覧</h3><button className="back-to-scan-btn" onClick={() => setShowSakeList(false)}>← スキャン画面に戻る</button></div>
+            <div className="admin-list-header">
+              <h3>登録済み銘柄一覧</h3>
+              <button className="back-to-scan-btn" onClick={() => setShowSakeList(false)}>← 戻る</button>
+            </div>
             <div className="admin-sake-list">
-              {adminSakes.length === 0 ? <div className="empty-list"><p>まだ銘柄が登録されていません</p></div> :
-                adminSakes.map(sake => (
-                  <div key={sake.id} className="admin-sake-card">
-                    <div className="admin-sake-info"><h4>{sake.name}</h4><p>{sake.category}</p><p>{sake.brewery}</p></div>
-                    <div className="admin-sake-actions">
-                      <button className="edit-btn-small" onClick={() => setEditingSake({...sake})}>✏️ 編集</button>
-                      <button className="delete-btn-small" onClick={() => setDeleteConfirm({id:sake.id,name:sake.name})}>🗑️ 削除</button>
-                    </div>
+              {adminSakes.length === 0 ? (
+                <div className="empty-list"><p>まだ銘柄が登録されていません</p></div>
+              ) : adminSakes.map(sake => (
+                <div key={sake.id} className="admin-sake-card">
+                  <div className="admin-sake-info">
+                    <h4>{sake.name}</h4>
+                    <p>{sake.category}</p>
+                    <p>{sake.brewery}</p>
                   </div>
-                ))
-              }
+                  <div className="admin-sake-actions">
+                    <button className="edit-btn-small" onClick={() => setEditingSake({...sake})}>✏️ 編集</button>
+                    <button className="delete-btn-small" onClick={() => setDeleteConfirm({id: sake.id, name: sake.name})}>🗑️ 削除</button>
+                  </div>
+                </div>
+              ))}
             </div>
             {editingSake && (
-              <div className="modal-overlay" onClick={() => setEditingSake(null)}><div className="modal-content" onClick={e => e.stopPropagation()}>
-                <h3>✏️ 銘柄情報の編集</h3>
-                <div className="result-form">
-                  <div className="form-group"><label>銘柄名</label><input type="text" value={editingSake.name} onChange={(e) => setEditingSake({...editingSake, name: e.target.value})} /></div>
-                  <div className="form-group"><label>特定名称酒</label><select value={editingSake.category} onChange={(e) => setEditingSake({...editingSake, category: e.target.value})}><option value="">選択してください</option>{categoryOptions.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                  <div className="form-group"><label>蔵元（都道府県）</label><input type="text" value={editingSake.brewery} onChange={(e) => setEditingSake({...editingSake, brewery: e.target.value})} /></div>
+              <div className="modal-overlay" onClick={() => setEditingSake(null)}>
+                <div className="modal-content" onClick={e => e.stopPropagation()}>
+                  <h3>✏️ 銘柄情報の編集</h3>
+                  <div className="result-form">
+                    <div className="form-group"><label>銘柄名</label><input type="text" value={editingSake.name} onChange={(e) => setEditingSake({...editingSake, name: e.target.value})} /></div>
+                    <div className="form-group"><label>特定名称酒</label>
+                      <select value={editingSake.category} onChange={(e) => setEditingSake({...editingSake, category: e.target.value})}>
+                        <option value="">選択してください</option>
+                        {categoryOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group"><label>蔵元（都道府県）</label><input type="text" value={editingSake.brewery} onChange={(e) => setEditingSake({...editingSake, brewery: e.target.value})} /></div>
+                  </div>
+                  <div className="modal-buttons">
+                    <button className="modal-btn save-btn" onClick={updateSakeEntry}>更新</button>
+                    <button className="modal-btn cancel-confirm-btn" onClick={() => setEditingSake(null)}>キャンセル</button>
+                  </div>
                 </div>
-                <div className="modal-buttons"><button className="modal-btn save-btn" onClick={updateSake}>更新</button><button className="modal-btn cancel-confirm-btn" onClick={() => setEditingSake(null)}>キャンセル</button></div>
-              </div></div>
+              </div>
             )}
             {deleteConfirm && (
-              <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}><div className="modal-content" onClick={e => e.stopPropagation()}>
-                <h3>⚠️ 削除の確認</h3><p className="modal-text"><strong>{deleteConfirm.name}</strong><br/>この銘柄を削除してもよろしいですか？</p><p className="modal-warning">※関連する評価レポートも削除されます。</p>
-                <div className="modal-buttons"><button className="modal-btn delete-confirm-btn" onClick={() => deleteSake(deleteConfirm.id)}>削除する</button><button className="modal-btn cancel-confirm-btn" onClick={() => setDeleteConfirm(null)}>キャンセル</button></div>
-              </div></div>
+              <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
+                <div className="modal-content" onClick={e => e.stopPropagation()}>
+                  <h3>⚠️ 削除の確認</h3>
+                  <p className="modal-text"><strong>{deleteConfirm.name}</strong><br/>この銘柄を削除してもよろしいですか？</p>
+                  <p className="modal-warning">※関連する評価レポートも削除されます。</p>
+                  <div className="modal-buttons">
+                    <button className="modal-btn delete-confirm-btn" onClick={() => deleteSakeEntry(deleteConfirm.id)}>削除する</button>
+                    <button className="modal-btn cancel-confirm-btn" onClick={() => setDeleteConfirm(null)}>キャンセル</button>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         )}
@@ -355,29 +500,56 @@ const SakeApp = () => {
     );
   };
 
+  // ===== 銘柄一覧 =====
   const SakeListScreen = () => {
-    const categories = [{id:'all',name:'すべて'},{id:'純米大吟醸',name:'純米大吟醸'},{id:'純米吟醸',name:'純米吟醸'},{id:'特別純米',name:'特別純米'},{id:'純米酒',name:'純米酒'},{id:'大吟醸',name:'大吟醸'},{id:'吟醸',name:'吟醸'},{id:'特別本醸造',name:'特別本醸造'},{id:'本醸造',name:'本醸造'},{id:'普通酒',name:'普通酒'},{id:'その他',name:'その他'}];
+    const categories = [
+      {id:'all',name:'すべて'},{id:'純米大吟醸',name:'純米大吟醸'},{id:'純米吟醸',name:'純米吟醸'},
+      {id:'特別純米',name:'特別純米'},{id:'純米酒',name:'純米酒'},{id:'大吟醸',name:'大吟醸'},
+      {id:'吟醸',name:'吟醸'},{id:'特別本醸造',name:'特別本醸造'},{id:'本醸造',name:'本醸造'},
+      {id:'普通酒',name:'普通酒'},{id:'その他',name:'その他'}
+    ];
     const knownCats = ['純米大吟醸','純米吟醸','特別本醸造','大吟醸','吟醸','純米酒','特別純米','本醸造','普通酒'];
-    const filteredSakes = filterCategory === 'all' ? sakes : filterCategory === 'その他' ? sakes.filter(s => !knownCats.includes(s.category)) : sakes.filter(s => s.category === filterCategory);
+    const filteredSakes = filterCategory === 'all' ? sakes
+      : filterCategory === 'その他' ? sakes.filter(s => !knownCats.includes(s.category))
+      : sakes.filter(s => s.category === filterCategory);
 
     return (
       <div className="screen sake-list-screen">
-        <div className="header"><ChevronLeft size={24} onClick={() => setCurrentScreen('home')} /><h2>銘柄を選択</h2><Search size={24} /></div>
-        <div className="category-tabs">{categories.map(cat => <button key={cat.id} className={'category-tab ' + (filterCategory === cat.id ? 'active' : '')} onClick={() => setFilterCategory(cat.id)}>{cat.name}</button>)}</div>
+        <div className="header">
+          <ChevronLeft size={24} onClick={() => setCurrentScreen('home')} />
+          <h2>銘柄を選択</h2>
+          <Search size={24} style={{opacity:0}} />
+        </div>
+        <div className="category-tabs">
+          {categories.map(cat => (
+            <button key={cat.id} className={'category-tab ' + (filterCategory === cat.id ? 'active' : '')} onClick={() => setFilterCategory(cat.id)}>{cat.name}</button>
+          ))}
+        </div>
         <div className="sake-list">
-          {filteredSakes.map(sake => (
+          {filteredSakes.length === 0 ? (
+            <div className="no-reports" style={{marginTop:40}}><p>まだ銘柄が登録されていません</p></div>
+          ) : filteredSakes.map(sake => (
             <div key={sake.id} className="sake-card" onClick={() => { setSelectedSake(sake); setCurrentScreen('sakeDetail'); }}>
               <div className="sake-images-container">
-                <div className="sake-image">{sake.frontImage ? <img src={sake.frontImage} alt={sake.name + ' 表'} /> : <div className="placeholder-image"></div>}<span className="image-label">表</span></div>
-                {sake.backImage && <div className="sake-image"><img src={sake.backImage} alt={sake.name + ' 裏'} /><span className="image-label">裏</span></div>}
+                <div className="sake-image">
+                  {sake.frontImage ? <img src={sake.frontImage} alt={sake.name + ' 表'} /> : <div className="placeholder-image"></div>}
+                  <span className="image-label">表</span>
+                </div>
+                {sake.backImage && (
+                  <div className="sake-image">
+                    <img src={sake.backImage} alt={sake.name + ' 裏'} />
+                    <span className="image-label">裏</span>
+                  </div>
+                )}
               </div>
               <div className="sake-info">
                 <span className="sake-category">{sake.category}</span>
                 {sake.reportCount > 0 && <span className="report-badge">評価済み</span>}
-                <h3>{sake.name}</h3><p>{sake.brewery}</p>
+                <h3>{sake.name}</h3>
+                <p>{sake.brewery}</p>
                 {sake.rating > 0 && <div className="sake-rating">⭐ {sake.rating.toFixed(1)}</div>}
               </div>
-              <ChevronLeft size={20} style={{transform:'rotate(180deg)'}} />
+              <ChevronLeft size={20} style={{transform:'rotate(180deg)', flexShrink:0}} />
             </div>
           ))}
         </div>
@@ -386,51 +558,82 @@ const SakeApp = () => {
     );
   };
 
+  // ===== 銘柄詳細 =====
   const SakeDetailScreen = () => {
     const [reports, setReports] = useState([]);
     const [loading, setLoading] = useState(true);
-    useEffect(() => { if (selectedSake?.id) loadSakeReports(); }, [selectedSake?.id]);
-    const loadSakeReports = async () => { setLoading(true); const r = await loadReports(selectedSake.id); setReports(r); setLoading(false); };
+
+    useEffect(() => {
+      if (selectedSake?.id) {
+        setLoading(true);
+        loadReports(selectedSake.id).then(r => { setReports(r); setLoading(false); });
+      }
+    }, [selectedSake?.id]);
+
     const getFinishLabel = (v) => v === 1 ? '短い' : v === 2 ? '中程度' : '長い';
 
     return (
       <div className="screen sake-detail-screen">
-        <div className="header"><ChevronLeft size={24} onClick={() => setCurrentScreen('sakeList')} /><h2>酒の詳細</h2></div>
+        <div className="header">
+          <ChevronLeft size={24} onClick={() => setCurrentScreen('sakeList')} />
+          <h2>酒の詳細</h2>
+          <div style={{width:24}} />
+        </div>
         <div className="detail-content">
           <div className="sake-detail-header">
             <div className="sake-preview-container">
-              {selectedSake?.frontImage && <div className="sake-preview-small"><img src={selectedSake.frontImage} alt={selectedSake.name + ' 表'} /></div>}
-              {selectedSake?.backImage && <div className="sake-preview-small"><img src={selectedSake.backImage} alt={selectedSake.name + ' 裏'} /></div>}
+              {selectedSake?.frontImage && <div className="sake-preview-small"><img src={selectedSake.frontImage} alt="表" /></div>}
+              {selectedSake?.backImage && <div className="sake-preview-small"><img src={selectedSake.backImage} alt="裏" /></div>}
             </div>
             <h3 className="sake-name">{selectedSake?.name}</h3>
             <p className="sake-meta">{selectedSake?.category} / {selectedSake?.brewery}</p>
-            {selectedSake?.rating > 0 && <div className="sake-rating-large">⭐ {selectedSake.rating.toFixed(1)}点<span className="report-count">（{reports.length}件の評価）</span></div>}
+            {selectedSake?.rating > 0 && (
+              <div className="sake-rating-large">⭐ {selectedSake.rating.toFixed(1)}点<span className="report-count">（{reports.length}件の評価）</span></div>
+            )}
           </div>
           <div className="reports-section">
             <h4>📝 みんなの評価</h4>
-            {loading ? <div className="loading-reports">読み込み中...</div> : reports.length === 0 ? (
-              <div className="no-reports"><p>まだ評価がありません</p><button className="add-report-btn" onClick={() => setCurrentScreen('tastingForm')}>最初の評価を投稿する</button></div>
-            ) : (
-              <div className="reports-list">
-                {reports.map((report, i) => (
-                  <div key={i} className="report-detail-card">
-                    <div className="report-detail-header">
-                      <div className="user-avatar-small">{report.userName?.charAt(0) || 'U'}</div>
-                      <div className="report-user-info"><strong>{report.userName}</strong><span className="report-date">{new Date(report.timestamp).toLocaleDateString('ja-JP')}</span></div>
-                      <div className="report-score-badge">{report.score}点</div>
+            {loading ? <div className="loading-reports">読み込み中...</div>
+              : reports.length === 0 ? (
+                <div className="no-reports">
+                  <p>まだ評価がありません</p>
+                  <button className="add-report-btn" onClick={() => setCurrentScreen('tastingForm')}>最初の評価を投稿する</button>
+                </div>
+              ) : (
+                <div className="reports-list">
+                  {reports.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)).map((report, i) => (
+                    <div key={i} className="report-detail-card">
+                      <div className="report-detail-header">
+                        <div className="user-avatar-small">{report.userName?.charAt(0) || 'U'}</div>
+                        <div className="report-user-info">
+                          <strong>{report.userName}</strong>
+                          <span className="report-date">{new Date(report.timestamp).toLocaleDateString('ja-JP')}</span>
+                        </div>
+                        <div className="report-score-badge">{report.score}点</div>
+                      </div>
+                      <div className="report-evaluations">
+                        {[{l:'甘辛度',v:report.sweetness,m:5},{l:'香り',v:report.aroma,m:5},{l:'濃淡',v:report.body,m:5},{l:'酸味',v:report.acidity,m:5}].map(e => (
+                          <div key={e.l} className="eval-row">
+                            <span className="eval-label">{e.l}:</span>
+                            <div className="eval-bar-container"><div className="eval-bar" style={{width:((e.v-1)/(e.m-1)*100)+'%'}}></div></div>
+                            <span className="eval-value">{e.v}/{e.m}</span>
+                          </div>
+                        ))}
+                        <div className="eval-row">
+                          <span className="eval-label">余韻:</span>
+                          <div className="eval-bar-container"><div className="eval-bar" style={{width:((report.finish-1)/(3-1)*100)+'%'}}></div></div>
+                          <span className="eval-value">{getFinishLabel(report.finish)}</span>
+                        </div>
+                      </div>
+                      <div className="report-attributes">
+                        <span className="attr-badge">{report.clarity}</span>
+                        <span className="attr-badge">{report.temperature}</span>
+                      </div>
+                      {report.notes && <div className="report-notes"><p>{report.notes}</p></div>}
                     </div>
-                    <div className="report-evaluations">
-                      {[{l:'甘辛度',v:report.sweetness,m:5},{l:'香り',v:report.aroma,m:5},{l:'濃淡',v:report.body,m:5},{l:'酸味',v:report.acidity,m:5}].map(e => (
-                        <div key={e.l} className="eval-row"><span className="eval-label">{e.l}:</span><div className="eval-bar-container"><div className="eval-bar" style={{width:((e.v-1)/(e.m-1)*100)+'%'}}></div></div><span className="eval-value">{e.v}/{e.m}</span></div>
-                      ))}
-                      <div className="eval-row"><span className="eval-label">余韻:</span><div className="eval-bar-container"><div className="eval-bar" style={{width:((report.finish-1)/(3-1)*100)+'%'}}></div></div><span className="eval-value">{getFinishLabel(report.finish)}</span></div>
-                    </div>
-                    <div className="report-attributes"><span className="attr-badge">{report.clarity}</span><span className="attr-badge">{report.temperature}</span></div>
-                    {report.notes && <div className="report-notes"><p>{report.notes}</p></div>}
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
           </div>
           <button className="floating-add-report-btn" onClick={() => setCurrentScreen('tastingForm')}>✏️ 評価を追加</button>
         </div>
@@ -438,27 +641,27 @@ const SakeApp = () => {
     );
   };
 
+  // ===== テイスティングフォーム =====
   const TastingFormScreen = () => {
     const [formData, setFormData] = useState(
       editingReport || { sweetness:3, aroma:3, body:3, acidity:3, finish:2, clarity:'透明', temperature:'冷', score:85, notes:'' }
     );
-    
+
     const submitReport = async () => {
-      // 編集モードの場合は古いレポートを削除
       if (editingReportKey) {
-        try {
-          await window.storage.delete(editingReportKey, true);
-        } catch (error) {
-          console.error('Error deleting old report:', error);
-        }
+        await dbRemove(`reports/${selectedSake.id}/${editingReportKey}`);
       }
-      
-      const report = { ...formData, sakeId: selectedSake.id, sakeName: selectedSake.name, userName: userName || 'ゲスト', timestamp: new Date().toISOString() };
+      const report = {
+        ...formData,
+        sakeId: selectedSake.id,
+        sakeName: selectedSake.name,
+        userName: userName || 'ゲスト',
+        timestamp: new Date().toISOString()
+      };
       await saveReport(selectedSake.id, report);
       const reports = await loadReports(selectedSake.id);
       const avg = reports.reduce((s, r) => s + r.score, 0) / reports.length;
       await saveSake({ ...selectedSake, rating: avg, reportCount: reports.length });
-      
       setEditingReport(null);
       setEditingReportKey(null);
       alert(editingReportKey ? '評価を更新しました！' : '評価を送信しました！');
@@ -467,17 +670,37 @@ const SakeApp = () => {
 
     return (
       <div className="screen tasting-form-screen">
-        <div className="header"><ChevronLeft size={24} onClick={() => { setEditingReport(null); setEditingReportKey(null); setCurrentScreen(editingReportKey ? 'mypage' : 'sakeDetail'); }} /><h2>{editingReportKey ? '評価を編集' : '酒の記憶'}</h2></div>
+        <div className="header">
+          <ChevronLeft size={24} onClick={() => { setEditingReport(null); setEditingReportKey(null); setCurrentScreen(editingReportKey ? 'mypage' : 'sakeDetail'); }} />
+          <h2>{editingReportKey ? '評価を編集' : '酒の記憶'}</h2>
+          <div style={{width:24}} />
+        </div>
         <div className="form-content">
           <div className="sake-preview-container">
-            <div className="sake-preview">{selectedSake?.frontImage && <img src={selectedSake.frontImage} alt={selectedSake.name + ' 表'} />}<div className="edit-icon">✏️</div><span className="preview-label">表ラベル</span></div>
-            {selectedSake?.backImage && <div className="sake-preview"><img src={selectedSake.backImage} alt={selectedSake.name + ' 裏'} /><span className="preview-label">裏ラベル</span></div>}
+            {selectedSake?.frontImage && (
+              <div className="sake-preview">
+                <img src={selectedSake.frontImage} alt="表ラベル" />
+                <span className="preview-label">表ラベル</span>
+              </div>
+            )}
+            {selectedSake?.backImage && (
+              <div className="sake-preview">
+                <img src={selectedSake.backImage} alt="裏ラベル" />
+                <span className="preview-label">裏ラベル</span>
+              </div>
+            )}
           </div>
           <h3 className="sake-name">{selectedSake?.name}</h3>
           <p className="sake-meta">{selectedSake?.category} {selectedSake?.brewery}</p>
           <div className="evaluation-section">
             <h4>味の構成</h4>
-            {[{key:'sweetness',label:'甘辛度',l:'甘',r:'辛',max:5},{key:'aroma',label:'香りの強さ',l:'穏やか',r:'華やか',max:5},{key:'body',label:'濃淡',l:'淡麗',r:'濃厚',max:5},{key:'acidity',label:'酸味',l:'弱い',r:'強い',max:5},{key:'finish',label:'余韻（後味）',l:'短い',r:'長い',max:3}].map(s => (
+            {[
+              {key:'sweetness',label:'甘辛度',l:'甘',r:'辛',max:5},
+              {key:'aroma',label:'香りの強さ',l:'穏やか',r:'華やか',max:5},
+              {key:'body',label:'濃淡',l:'淡麗',r:'濃厚',max:5},
+              {key:'acidity',label:'酸味',l:'弱い',r:'強い',max:5},
+              {key:'finish',label:'余韻（後味）',l:'短い',r:'長い',max:3}
+            ].map(s => (
               <div key={s.key} className="slider-group">
                 <label><span>{s.label}</span><span className="range-label">1-{s.max}</span></label>
                 <div className="slider-labels"><span>{s.l}</span><span>{s.r}</span></div>
@@ -485,91 +708,86 @@ const SakeApp = () => {
               </div>
             ))}
           </div>
-          <button className="submit-btn" onClick={submitReport}>{editingReportKey ? '✏️ 評価を更新する' : '✏️ 評価を送信する'}</button>
           <div className="state-section">
             <h4>状態・温度</h4>
-            <div className="option-group"><p className="option-label">にごりの状態</p><div className="button-group">{['透明','うっすら濁り','白濁','その他'].map(o => <button key={o} className={'option-btn ' + (formData.clarity === o ? 'active' : '')} onClick={() => setFormData({...formData, clarity: o})}>{o}</button>)}</div></div>
-            <div className="option-group"><p className="option-label">最適な温度帯</p><div className="button-group">{['冷','常温','燗'].map(o => <button key={o} className={'option-btn ' + (formData.temperature === o ? 'active' : '')} onClick={() => setFormData({...formData, temperature: o})}>{o}</button>)}</div></div>
+            <div className="option-group">
+              <p className="option-label">にごりの状態</p>
+              <div className="button-group">
+                {['透明','うっすら濁り','白濁','その他'].map(o => (
+                  <button key={o} className={'option-btn ' + (formData.clarity === o ? 'active' : '')} onClick={() => setFormData({...formData, clarity: o})}>{o}</button>
+                ))}
+              </div>
+            </div>
+            <div className="option-group">
+              <p className="option-label">最適な温度帯</p>
+              <div className="button-group">
+                {['冷','常温','燗'].map(o => (
+                  <button key={o} className={'option-btn ' + (formData.temperature === o ? 'active' : '')} onClick={() => setFormData({...formData, temperature: o})}>{o}</button>
+                ))}
+              </div>
+            </div>
           </div>
           <div className="score-section">
             <h4>推し度 (0-100)</h4>
-            <div className="score-input-wrapper"><input type="number" min="0" max="100" value={formData.score} onChange={e => setFormData({...formData, score: Math.min(100, Math.max(0, parseInt(e.target.value) || 0))})} className="score-input" /><span className="score-unit">点</span></div>
+            <div className="score-input-wrapper">
+              <input type="number" min="0" max="100" value={formData.score} onChange={e => setFormData({...formData, score: Math.min(100, Math.max(0, parseInt(e.target.value) || 0))})} className="score-input" />
+              <span className="score-unit">点</span>
+            </div>
             <p className="score-note">※銘柄の一般的な評価ではなく、あなた自身の好みにどれだけフィットしたかをお答えください。</p>
           </div>
           <div className="notes-section">
             <h4>テイスティングメモ</h4>
-            <textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} placeholder="若い果実（桃・梨）、日本刺し、膨らみなど、料理名など、自由にどうぞ。" rows="4" />
+            <textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} placeholder="若い果実（桃・梨）、膨らみなど、料理名など、自由にどうぞ。" rows="4" />
           </div>
+          <button className="submit-btn" onClick={submitReport}>{editingReportKey ? '✏️ 評価を更新する' : '✏️ 評価を送信する'}</button>
         </div>
       </div>
     );
   };
 
+  // ===== マイページ =====
   const MyPageScreen = () => {
     const [myReports, setMyReports] = useState([]);
-    const [myReportKeys, setMyReportKeys] = useState([]);
     const [deleteConfirmReport, setDeleteConfirmReport] = useState(null);
-    
+
     useEffect(() => { loadMyReports(); }, []);
-    
+
     const loadMyReports = async () => {
-      try {
-        const allKeys = await window.storage.list('report:', true);
-        if (allKeys?.keys) {
-          const reportsWithKeys = await Promise.all(allKeys.keys.map(async k => { 
-            const r = await window.storage.get(k, true); 
-            return r ? { report: JSON.parse(r.value), key: k } : null; 
-          }));
-          const filtered = reportsWithKeys
-            .filter(item => item && item.report && item.report.userName === userName)
-            .sort((a, b) => new Date(b.report.timestamp) - new Date(a.report.timestamp));
-          
-          setMyReports(filtered.map(item => item.report));
-          setMyReportKeys(filtered.map(item => item.key));
-        }
-      } catch (error) { console.log('Loading my reports:', error); }
+      const allReports = await loadAllReports();
+      const filtered = allReports
+        .filter(r => r && r.userName === userName)
+        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      setMyReports(filtered);
     };
-    
-    const handleEditReport = (report, reportKey) => {
-      // 対応する銘柄を検索
+
+    const handleEditReport = (report) => {
       const sake = sakes.find(s => s.id === report.sakeId);
       if (sake) {
         setSelectedSake(sake);
         setEditingReport(report);
-        setEditingReportKey(reportKey);
+        setEditingReportKey(report.key);
         setCurrentScreen('tastingForm');
       } else {
         alert('この銘柄が見つかりません');
       }
     };
-    
-    const handleDeleteReport = async (reportKey, sakeId) => {
-      try {
-        // レポートを削除
-        await window.storage.delete(reportKey, true);
-        
-        // 銘柄の評価を再計算
-        const sake = sakes.find(s => s.id === sakeId);
-        if (sake) {
-          const reports = await loadReports(sakeId);
-          if (reports.length > 0) {
-            const avg = reports.reduce((s, r) => s + r.score, 0) / reports.length;
-            await saveSake({ ...sake, rating: avg, reportCount: reports.length });
-          } else {
-            // 評価が0件になった場合
-            await saveSake({ ...sake, rating: 0, reportCount: 0 });
-          }
+
+    const handleDeleteReport = async (report) => {
+      await dbRemove(`reports/${report.sakeId}/${report.key}`);
+      const sake = sakes.find(s => s.id === report.sakeId);
+      if (sake) {
+        const remaining = await loadReports(report.sakeId);
+        if (remaining.length > 0) {
+          const avg = remaining.reduce((s, r) => s + r.score, 0) / remaining.length;
+          await saveSake({ ...sake, rating: avg, reportCount: remaining.length });
+        } else {
+          await saveSake({ ...sake, rating: 0, reportCount: 0 });
         }
-        
-        // リストを再読み込み
-        await loadMyReports();
-        await loadSakes();
-        setDeleteConfirmReport(null);
-        alert('✅ 評価を削除しました');
-      } catch (error) {
-        console.error('Error deleting report:', error);
-        alert('❌ 削除に失敗しました');
       }
+      await loadMyReports();
+      await loadSakes();
+      setDeleteConfirmReport(null);
+      alert('✅ 評価を削除しました');
     };
 
     return (
@@ -578,23 +796,31 @@ const SakeApp = () => {
         <div className="mypage-content">
           <div className="user-profile">
             <div className="user-avatar-large">{userName?.charAt(0) || 'U'}</div>
-            <h3>{userName || 'ゲスト'}</h3><p className="user-stats">{myReports.length}件の評価</p>
+            <h3>{userName || 'ゲスト'}</h3>
+            <p className="user-stats">{myReports.length}件の評価</p>
             <button className="edit-name-btn" onClick={() => setShowNameInput(true)}>名前を変更</button>
           </div>
           <div className="my-reports-section">
             <h4>📝 あなたの評価</h4>
-            {myReports.length === 0 ? <div className="no-reports"><p>まだ評価を投稿していません</p></div> : (
-              <div className="my-reports-list">{myReports.map((report, i) => (
-                <div key={i} className="my-report-card">
-                  <div className="my-report-header"><h4>{report.sakeName}</h4><span className="my-report-score">{report.score}点</span></div>
-                  <p className="my-report-date">{new Date(report.timestamp).toLocaleDateString('ja-JP', {year:'numeric',month:'long',day:'numeric'})}</p>
-                  {report.notes && <p className="my-report-notes">{report.notes}</p>}
-                  <div className="my-report-actions">
-                    <button className="edit-report-btn" onClick={() => handleEditReport(report, myReportKeys[i])}>✏️ 編集</button>
-                    <button className="delete-report-btn" onClick={() => setDeleteConfirmReport({report, key: myReportKeys[i]})}>🗑️ 削除</button>
+            {myReports.length === 0 ? (
+              <div className="no-reports"><p>まだ評価を投稿していません</p></div>
+            ) : (
+              <div className="my-reports-list">
+                {myReports.map((report, i) => (
+                  <div key={i} className="my-report-card">
+                    <div className="my-report-header">
+                      <h4>{report.sakeName}</h4>
+                      <span className="my-report-score">{report.score}点</span>
+                    </div>
+                    <p className="my-report-date">{new Date(report.timestamp).toLocaleDateString('ja-JP', {year:'numeric',month:'long',day:'numeric'})}</p>
+                    {report.notes && <p className="my-report-notes">{report.notes}</p>}
+                    <div className="my-report-actions">
+                      <button className="edit-report-btn" onClick={() => handleEditReport(report)}>✏️ 編集</button>
+                      <button className="delete-report-btn" onClick={() => setDeleteConfirmReport(report)}>🗑️ 削除</button>
+                    </div>
                   </div>
-                </div>
-              ))}</div>
+                ))}
+              </div>
             )}
           </div>
         </div>
@@ -603,13 +829,10 @@ const SakeApp = () => {
           <div className="modal-overlay" onClick={() => setDeleteConfirmReport(null)}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
               <h3>⚠️ 削除の確認</h3>
-              <p className="modal-text">
-                <strong>{deleteConfirmReport.report.sakeName}</strong>の評価<br/>
-                （{deleteConfirmReport.report.score}点）
-              </p>
+              <p className="modal-text"><strong>{deleteConfirmReport.sakeName}</strong>の評価（{deleteConfirmReport.score}点）</p>
               <p className="modal-warning">この評価を削除してもよろしいですか？</p>
               <div className="modal-buttons">
-                <button className="modal-btn delete-confirm-btn" onClick={() => handleDeleteReport(deleteConfirmReport.key, deleteConfirmReport.report.sakeId)}>削除する</button>
+                <button className="modal-btn delete-confirm-btn" onClick={() => handleDeleteReport(deleteConfirmReport)}>削除する</button>
                 <button className="modal-btn cancel-confirm-btn" onClick={() => setDeleteConfirmReport(null)}>キャンセル</button>
               </div>
             </div>
@@ -619,12 +842,15 @@ const SakeApp = () => {
     );
   };
 
+  // ===== みんなの記録 =====
   const CommunityScreen = () => {
     const [allReports, setAllReports] = useState([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('ranking');
 
-    useEffect(() => { (async () => { setLoading(true); setAllReports(await loadAllReports()); setLoading(false); })(); }, []);
+    useEffect(() => {
+      (async () => { setLoading(true); setAllReports(await loadAllReports()); setLoading(false); })();
+    }, []);
 
     const totalReports = allReports.length;
     const totalParticipants = [...new Set(allReports.map(r => r.userName))].length;
@@ -635,7 +861,9 @@ const SakeApp = () => {
       if (!sakeMap[r.sakeId]) sakeMap[r.sakeId] = { name: r.sakeName, scores: [], sakeId: r.sakeId };
       sakeMap[r.sakeId].scores.push(r.score || 0);
     });
-    const sakeRanking = Object.values(sakeMap).map(s => ({...s, avg: s.scores.reduce((a,b) => a+b, 0) / s.scores.length, count: s.scores.length})).sort((a,b) => b.avg - a.avg);
+    const sakeRanking = Object.values(sakeMap)
+      .map(s => ({...s, avg: s.scores.reduce((a,b) => a+b, 0) / s.scores.length, count: s.scores.length}))
+      .sort((a,b) => b.avg - a.avg);
 
     const pMap = {};
     allReports.forEach(r => {
@@ -643,17 +871,38 @@ const SakeApp = () => {
       if (!pMap[n]) pMap[n] = { name: n, count: 0, total: 0 };
       pMap[n].count++; pMap[n].total += (r.score || 0);
     });
-    const pRanking = Object.values(pMap).map(p => ({...p, avg: (p.total / p.count).toFixed(1)})).sort((a,b) => b.count - a.count);
+    const pRanking = Object.values(pMap)
+      .map(p => ({...p, avg: (p.total / p.count).toFixed(1)}))
+      .sort((a,b) => b.count - a.count);
 
     const medals = ['🥇','🥈','🥉'];
     const medalColors = ['#FFD700','#C0C0C0','#CD7F32'];
 
+    const getRank = (arr, idx, key) => {
+      let rank = 1;
+      for (let i = 0; i < idx; i++) {
+        if (arr[i][key] !== arr[idx][key]) rank = i + 2;
+      }
+      if (idx > 0 && arr[idx-1][key] === arr[idx][key]) {
+        for (let i = idx - 1; i >= 0; i--) {
+          if (arr[i][key] === arr[idx][key]) rank = i + 1;
+          else break;
+        }
+      }
+      return rank;
+    };
+
     return (
       <div className="screen community-screen">
         <div className="header"><h2>みんなの記録</h2></div>
-        {loading ? <div className="community-loading"><div className="spinner"></div><p>データを読み込み中...</p></div> :
-        totalReports === 0 ? (
-          <div className="community-empty"><TokkuriSVG width={60} height={60} color="#ccc" /><p style={{marginTop:16,color:'#999',fontSize:16}}>まだ記録がありません</p><p style={{color:'#bbb',fontSize:13}}>銘柄を評価すると、ここに統計が表示されます</p></div>
+        {loading ? (
+          <div className="community-loading"><div className="spinner"></div><p>データを読み込み中...</p></div>
+        ) : totalReports === 0 ? (
+          <div className="community-empty">
+            <TokkuriSVG width={60} height={60} color="#ccc" />
+            <p style={{marginTop:16,color:'#999',fontSize:16}}>まだ記録がありません</p>
+            <p style={{color:'#bbb',fontSize:13}}>銘柄を評価すると、ここに統計が表示されます</p>
+          </div>
         ) : (
           <div className="community-content">
             <div className="stats-row">
@@ -670,35 +919,10 @@ const SakeApp = () => {
               <div className="ranking-list">
                 {sakeRanking.map((sake, idx) => {
                   const sd = sakes.find(s => s.id === sake.sakeId);
-                  // 同率順位の計算
-                  let rank = 1;
-                  for (let i = 0; i < idx; i++) {
-                    if (sakeRanking[i].avg !== sake.avg) {
-                      rank = i + 2;
-                      break;
-                    }
-                  }
-                  if (idx > 0 && sakeRanking[idx - 1].avg === sake.avg) {
-                    // 直前と同じ平均点なら同じ順位
-                    for (let i = idx - 1; i >= 0; i--) {
-                      if (sakeRanking[i].avg === sake.avg) {
-                        rank = i + 1;
-                        for (let j = 0; j < i; j++) {
-                          if (sakeRanking[j].avg !== sake.avg) {
-                            rank = j + 2;
-                          }
-                        }
-                      } else {
-                        break;
-                      }
-                    }
-                  } else {
-                    rank = idx + 1;
-                  }
+                  const rank = getRank(sakeRanking, idx, 'avg');
                   const realRank = rank - 1;
-                  
                   return (
-                    <div key={sake.sakeId} className={'ranking-card' + (realRank < 3 ? ' medal' : '')} style={realRank < 3 ? {borderLeft:'4px solid '+medalColors[realRank]} : {}} onClick={() => { if(sd){setSelectedSake(sd);setCurrentScreen('sakeDetail');} }}>
+                    <div key={sake.sakeId} className={'ranking-card' + (realRank < 3 ? ' medal' : '')} style={realRank < 3 ? {borderLeft:'4px solid '+medalColors[realRank]} : {}} onClick={() => { if(sd){ setSelectedSake(sd); setCurrentScreen('sakeDetail'); } }}>
                       <div className="ranking-pos">{realRank < 3 ? <span style={{fontSize:24}}>{medals[realRank]}</span> : <span className="ranking-num">{rank}</span>}</div>
                       <div className="ranking-img">{sd?.frontImage ? <img src={sd.frontImage} alt={sake.name} /> : <span>🍶</span>}</div>
                       <div className="ranking-info"><h4>{sake.name}</h4><p>{sake.count}件の評価</p></div>
@@ -711,33 +935,8 @@ const SakeApp = () => {
             {activeTab === 'participants' && (
               <div className="ranking-list">
                 {pRanking.map((p, idx) => {
-                  // 同率順位の計算
-                  let rank = 1;
-                  for (let i = 0; i < idx; i++) {
-                    if (pRanking[i].count !== p.count) {
-                      rank = i + 2;
-                      break;
-                    }
-                  }
-                  if (idx > 0 && pRanking[idx - 1].count === p.count) {
-                    // 直前と同じ件数なら同じ順位
-                    for (let i = idx - 1; i >= 0; i--) {
-                      if (pRanking[i].count === p.count) {
-                        rank = i + 1;
-                        for (let j = 0; j < i; j++) {
-                          if (pRanking[j].count !== p.count) {
-                            rank = j + 2;
-                          }
-                        }
-                      } else {
-                        break;
-                      }
-                    }
-                  } else {
-                    rank = idx + 1;
-                  }
+                  const rank = getRank(pRanking, idx, 'count');
                   const realRank = rank - 1;
-                  
                   return (
                     <div key={p.name} className={'ranking-card' + (realRank < 3 ? ' medal' : '')} style={realRank < 3 ? {borderLeft:'4px solid '+medalColors[realRank]} : {}}>
                       <div className="ranking-pos">{realRank < 3 ? <span style={{fontSize:24}}>{medals[realRank]}</span> : <span className="ranking-num">{rank}</span>}</div>
@@ -756,6 +955,7 @@ const SakeApp = () => {
     );
   };
 
+  // ===== ボトムナビ =====
   const BottomNav = ({ screen }) => (
     <div className="bottom-nav">
       <div className={'nav-item ' + (screen === 'home' ? 'active' : '')} onClick={() => setCurrentScreen('home')}><Home size={24} /><span>ホーム</span></div>
@@ -765,6 +965,7 @@ const SakeApp = () => {
     </div>
   );
 
+  // ===== レンダリング =====
   return (
     <div className="sake-app">
       {currentScreen === 'splash' && <SplashScreen />}
@@ -805,9 +1006,8 @@ const SakeApp = () => {
 .sake-icon-circle{width:180px;height:180px;background:rgba(255,255,255,0.8);border-radius:50%;margin-bottom:40px;box-shadow:0 8px 32px rgba(0,0,0,0.1);display:flex;align-items:center;justify-content:center}
 .mode-selection h3{font-size:22px;font-weight:500;color:#5a5a5a;margin-bottom:40px}
 .mode-btn{width:100%;max-width:400px;padding:20px;margin:10px 0;border:none;border-radius:50px;font-size:18px;font-weight:500;cursor:pointer;transition:all 0.3s;box-shadow:0 4px 16px rgba(0,0,0,0.1)}
-.admin-btn{background:linear-gradient(135deg,#a8d5ba 0%,#8bc9a3 100%);color:#2d5a3d}
-.admin-btn:hover,.participant-btn:hover{transform:translateY(-2px)}
 .participant-btn{background:linear-gradient(135deg,#a8d0e6 0%,#87bdd8 100%);color:#2d4a5a}
+.participant-btn:hover{transform:translateY(-2px)}
 .admin-screen{background:#fafaf8}
 .admin-screen .header{background:white;border-bottom:1px solid #e8e8e8}
 .admin-content{padding:20px;padding-bottom:100px}
@@ -846,8 +1046,7 @@ const SakeApp = () => {
 .admin-sake-info h4{font-size:16px;margin-bottom:4px}
 .admin-sake-info p{font-size:13px;color:#888;margin-bottom:2px}
 .admin-sake-actions{display:flex;gap:8px}
-.edit-btn-small{padding:8px 16px;background:#e3f2fd;color:#1976d2;border:1px solid #1976d2;border-radius:20px;font-size:13px;cursor:pointer;transition:all 0.3s}
-.edit-btn-small:hover{background:#1976d2;color:white}
+.edit-btn-small{padding:8px 16px;background:#e3f2fd;color:#1976d2;border:1px solid #1976d2;border-radius:20px;font-size:13px;cursor:pointer}
 .delete-btn-small{padding:8px 16px;background:#ffebee;color:#e53935;border:1px solid #e53935;border-radius:20px;font-size:13px;cursor:pointer}
 .empty-list{text-align:center;padding:40px 20px;color:#999}
 .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000}
@@ -880,12 +1079,11 @@ const SakeApp = () => {
 .detail-content{padding:20px}
 .sake-detail-header{background:white;border-radius:16px;padding:24px;margin-bottom:24px;text-align:center}
 .sake-preview-container{display:flex;gap:16px;justify-content:center;margin-bottom:20px}
-.sake-preview-small{width:100px;height:100px;border-radius:12px;overflow:hidden;background:#f5f5f5}
+.sake-preview-small{width:100px;height:150px;border-radius:12px;overflow:hidden;background:#f5f5f5}
 .sake-preview-small img{width:100%;height:100%;object-fit:cover}
-.sake-preview{width:160px;height:160px;border-radius:16px;overflow:hidden;background:linear-gradient(135deg,#e8f4e8 0%,#d4e8d4 100%);position:relative}
+.sake-preview{width:140px;height:200px;border-radius:16px;overflow:hidden;background:linear-gradient(135deg,#e8f4e8 0%,#d4e8d4 100%);position:relative}
 .sake-preview img{width:100%;height:100%;object-fit:cover}
 .preview-label{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);color:white;font-size:11px;padding:4px 12px;border-radius:12px}
-.edit-icon{position:absolute;bottom:12px;right:12px;width:32px;height:32px;background:white;border-radius:50%;display:flex;align-items:center;justify-content:center}
 .sake-name{text-align:center;font-size:20px;font-weight:600;color:#333;margin-bottom:8px}
 .sake-meta{text-align:center;color:#888;font-size:14px;margin-bottom:30px}
 .sake-rating-large{font-size:24px;color:#ff9800;font-weight:700;margin-top:16px}
@@ -914,7 +1112,7 @@ const SakeApp = () => {
 .attr-badge{padding:6px 12px;background:#e3f2fd;color:#1976d2;border-radius:12px;font-size:12px}
 .report-notes{background:#f9f9f9;padding:12px;border-radius:8px;border-left:3px solid #ff9800}
 .report-notes p{font-size:14px;color:#555;line-height:1.6}
-.floating-add-report-btn{position:fixed;bottom:90px;right:20px;width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#4caf50 0%,#45a049 100%);border:none;color:white;font-size:24px;cursor:pointer}
+.floating-add-report-btn{display:block;width:calc(100% - 0px);margin-top:20px;padding:16px;background:linear-gradient(135deg,#4caf50 0%,#45a049 100%);color:white;border:none;border-radius:50px;font-size:16px;font-weight:600;cursor:pointer}
 .tasting-form-screen{padding-bottom:80px}
 .form-content{padding:20px}
 .evaluation-section,.state-section,.score-section,.notes-section{background:white;border-radius:16px;padding:20px;margin-bottom:20px}
@@ -952,10 +1150,8 @@ const SakeApp = () => {
 .my-report-date{font-size:12px;color:#999;margin-bottom:8px}
 .my-report-notes{font-size:14px;color:#666;line-height:1.6;margin-top:8px}
 .my-report-actions{display:flex;gap:8px;margin-top:12px}
-.edit-report-btn{flex:1;padding:8px 16px;background:#e3f2fd;color:#1976d2;border:1px solid #1976d2;border-radius:20px;font-size:13px;cursor:pointer;transition:all 0.3s}
-.edit-report-btn:hover{background:#1976d2;color:white}
-.delete-report-btn{flex:1;padding:8px 16px;background:#ffebee;color:#e53935;border:1px solid #e53935;border-radius:20px;font-size:13px;cursor:pointer;transition:all 0.3s}
-.delete-report-btn:hover{background:#e53935;color:white}
+.edit-report-btn{flex:1;padding:8px 16px;background:#e3f2fd;color:#1976d2;border:1px solid #1976d2;border-radius:20px;font-size:13px;cursor:pointer}
+.delete-report-btn{flex:1;padding:8px 16px;background:#ffebee;color:#e53935;border:1px solid #e53935;border-radius:20px;font-size:13px;cursor:pointer}
 .header.dark{background:#2c3e50;color:white}
 .header.dark h2{color:white}
 .bottom-nav{position:fixed;bottom:0;left:0;right:0;background:white;display:flex;justify-content:space-around;padding:12px 0;box-shadow:0 -2px 8px rgba(0,0,0,0.1);z-index:100}
@@ -977,7 +1173,6 @@ const SakeApp = () => {
 .ranking-list{display:flex;flex-direction:column;gap:12px}
 .ranking-card{background:white;border-radius:14px;padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:all 0.2s;border-left:4px solid transparent}
 .ranking-card.medal{box-shadow:0 2px 12px rgba(0,0,0,0.08)}
-.ranking-card:active{transform:scale(0.98)}
 .ranking-pos{width:36px;text-align:center;flex-shrink:0}
 .ranking-num{font-size:16px;font-weight:700;color:#bbb}
 .ranking-img{width:48px;height:48px;border-radius:10px;overflow:hidden;background:#f5f5f5;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:24px}
