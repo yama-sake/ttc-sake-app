@@ -265,19 +265,11 @@ const SakeApp = () => {
       setAnalyzing(true);
       try {
         const base64Data = frontImage.split(',')[1];
-        const response = await fetch(
-          `https://vision.googleapis.com/v1/images:annotate?key=${VISION_API_KEY}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              requests: [{
-                image: { content: base64Data },
-                features: [{ type: 'TEXT_DETECTION', maxResults: 1 }]
-              }]
-            })
-          }
-        );
+        const response = await fetch('/api/vision', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64Data })
+        });
         const data = await response.json();
         const text = data.responses?.[0]?.fullTextAnnotation?.text || '';
         const lines = [...new Set(text.split('\n').map(l => l.trim()).filter(l => l.length > 0))];
