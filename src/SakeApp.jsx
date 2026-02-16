@@ -210,7 +210,7 @@ const SakeApp = () => {
   );
 
   // ===== 管理者画面 =====
-  const VISION_API_KEY = "AIzaSyAhPGRB5-rQR56BrI-b8QQYK6DD-cpzXO8";
+  const VISION_API_KEY = "AIzaSyB6IoQxyqSaZIKRR-riv7J9DZZmDBSJl58";
 
   const AdminScreen = () => {
     const [frontImage, setFrontImage] = useState(null);
