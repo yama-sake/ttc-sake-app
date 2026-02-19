@@ -817,12 +817,16 @@ const SakeApp = () => {
               <input 
                 type="text" 
                 inputMode="numeric"
-                value={formData.score} 
+                value={formData.score === 0 ? '' : formData.score} 
                 onChange={e => {
                   const val = e.target.value.replace(/[^0-9]/g, '');
                   const num = val === '' ? 0 : Math.min(100, Math.max(0, parseInt(val)));
                   setFormData({...formData, score: num});
-                }} 
+                }}
+                onBlur={e => {
+                  if (e.target.value === '') setFormData({...formData, score: 0});
+                }}
+                placeholder="0"
                 className="score-input" 
               />
               <span className="score-unit">点</span>
