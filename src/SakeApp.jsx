@@ -397,7 +397,7 @@ const SakeApp = () => {
           <h2>【管理者】銘柄登録</h2>
           <div style={{width:24}} />
         </div>
-        {!showSakeList ? (
+        {!showSakeList && !showReportsManagement ? (
           <div className="admin-content">
             {!analysisResult ? (
               <div>
@@ -690,13 +690,21 @@ const SakeApp = () => {
                         {[{l:'甘辛度',v:report.sweetness,m:5},{l:'香り',v:report.aroma,m:5},{l:'濃淡',v:report.body,m:5},{l:'酸味',v:report.acidity,m:5}].map(e => (
                           <div key={e.l} className="eval-row">
                             <span className="eval-label">{e.l}:</span>
-                            <div className="eval-bar-container"><div className="eval-bar" style={{width:((e.v-1)/(e.m-1)*100)+'%'}}></div></div>
+                            <div className="eval-stars">
+                              {[...Array(e.m)].map((_, i) => (
+                                <span key={i} className={i < e.v ? 'star-filled' : 'star-empty'}>⭐</span>
+                              ))}
+                            </div>
                             <span className="eval-value">{e.v}/{e.m}</span>
                           </div>
                         ))}
                         <div className="eval-row">
                           <span className="eval-label">余韻:</span>
-                          <div className="eval-bar-container"><div className="eval-bar" style={{width:((report.finish-1)/(3-1)*100)+'%'}}></div></div>
+                          <div className="eval-stars">
+                            {[...Array(3)].map((_, i) => (
+                              <span key={i} className={i < report.finish ? 'star-filled' : 'star-empty'}>⭐</span>
+                            ))}
+                          </div>
                           <span className="eval-value">{getFinishLabel(report.finish)}</span>
                         </div>
                       </div>
@@ -806,7 +814,17 @@ const SakeApp = () => {
           <div className="score-section">
             <h4>推し度 (0-100)</h4>
             <div className="score-input-wrapper">
-              <input type="number" min="0" max="100" value={formData.score} onChange={e => setFormData({...formData, score: Math.min(100, Math.max(0, parseInt(e.target.value) || 0))})} className="score-input" />
+              <input 
+                type="text" 
+                inputMode="numeric"
+                value={formData.score} 
+                onChange={e => {
+                  const val = e.target.value.replace(/[^0-9]/g, '');
+                  const num = val === '' ? 0 : Math.min(100, Math.max(0, parseInt(val)));
+                  setFormData({...formData, score: num});
+                }} 
+                className="score-input" 
+              />
               <span className="score-unit">点</span>
             </div>
             <p className="score-note">※銘柄の一般的な評価ではなく、あなた自身の好みにどれだけフィットしたかをお答えください。</p>
@@ -1224,6 +1242,9 @@ const SakeApp = () => {
 .admin-report-meta{font-size:12px;color:#888;margin:0}
 .admin-report-score{background:#ff9800;color:white;padding:6px 12px;border-radius:12px;font-weight:600;font-size:14px;flex-shrink:0}
 .admin-report-notes{font-size:13px;color:#666;margin:8px 0 12px 0;line-height:1.5}
+.eval-stars{display:flex;gap:2px;flex:1}
+.star-filled{font-size:18px;filter:grayscale(0%);opacity:1}
+.star-empty{font-size:18px;filter:grayscale(100%);opacity:0.3}
 .submit-btn{width:100%;padding:18px;background:linear-gradient(135deg,#3d4f7d 0%,#2d3e5e 100%);color:white;border:none;border-radius:50px;font-size:16px;font-weight:600;cursor:pointer;margin:20px 0}
 .option-group{margin-bottom:24px}
 .option-label{font-size:14px;font-weight:500;color:#555;margin-bottom:12px}
