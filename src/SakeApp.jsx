@@ -120,6 +120,34 @@ const SakeApp = () => {
     }
   };
 
+  // ===== 星評価コンポーネント =====
+  const StarRating = ({ value, maxStars, onChange, label, leftLabel, rightLabel }) => {
+    return (
+      <div className="star-rating-group">
+        <div className="star-rating-header">
+          <label>{label}</label>
+          <span className="star-count">{value}/{maxStars}</span>
+        </div>
+        <div className="slider-labels">
+          <span>{leftLabel}</span>
+          <span>{rightLabel}</span>
+        </div>
+        <div className="star-rating-container">
+          {[...Array(maxStars)].map((_, i) => (
+            <button
+              key={i}
+              type="button"
+              className={`star-btn ${i < value ? 'active' : ''}`}
+              onClick={() => onChange(i + 1)}
+            >
+              ⭐
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   // ===== 徳利SVG =====
   const TokkuriSVG = ({ width = 100, height = 100, color = "#2c3e50" }) => (
     <svg width={width} height={height} viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -218,6 +246,8 @@ const SakeApp = () => {
     const [analyzing, setAnalyzing] = useState(false);
     const [analysisResult, setAnalysisResult] = useState(null);
     const [showSakeList, setShowSakeList] = useState(false);
+    const [showReportsManagement, setShowReportsManagement] = useState(false);
+    const [allReports, setAllReports] = useState([]);
     const [adminSakes, setAdminSakes] = useState([]);
     const [deleteConfirm, setDeleteConfirm] = useState(null);
     const [editingSake, setEditingSake] = useState(null);
@@ -225,11 +255,42 @@ const SakeApp = () => {
 
     useEffect(() => {
       if (showSakeList) loadAdminSakes();
-    }, [showSakeList]);
+      if (showReportsManagement) loadAllReportsForAdmin();
+    }, [showSakeList, showReportsManagement]);
 
     const loadAdminSakes = async () => {
       const data = await dbGet('sakes');
       setAdminSakes(data ? Object.values(data).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)) : []);
+    };
+
+    const loadAllReportsForAdmin = async () => {
+      const data = await dbGet('reports');
+      if (!data) { setAllReports([]); return; }
+      const reports = [];
+      Object.keys(data).forEach(sakeId => {
+        Object.keys(data[sakeId]).forEach(key => {
+          reports.push({ ...data[sakeId][key], sakeId, key });
+        });
+      });
+      setAllReports(reports.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
+    };
+
+    const deleteReportAsAdmin = async (sakeId, reportKey) => {
+      await dbRemove(`reports/${sakeId}/${reportKey}`);
+      const sake = sakes.find(s => s.id === sakeId);
+      if (sake) {
+        const remaining = await loadReports(sakeId);
+        if (remaining.length > 0) {
+          const avg = remaining.reduce((s, r) => s + r.score, 0) / remaining.length;
+          await saveSake({ ...sake, rating: avg, reportCount: remaining.length });
+        } else {
+          await saveSake({ ...sake, rating: 0, reportCount: 0 });
+        }
+      }
+      await loadAllReportsForAdmin();
+      await loadSakes();
+      setDeleteConfirm(null);
+      alert('✅ 評価を削除しました');
     };
 
     const compressImage = (base64Image, maxWidth = 800) => {
@@ -365,6 +426,7 @@ const SakeApp = () => {
                 </button>
                 {analyzing && <div className="progress-indicator"><div className="spinner"></div><p>ラベルを解析中...</p></div>}
                 <button className="manage-btn" onClick={() => setShowSakeList(true)}>📋 登録済み銘柄を管理</button>
+                <button className="manage-btn" onClick={() => setShowReportsManagement(true)} style={{marginTop:'12px'}}>📝 全評価を管理</button>
               </div>
             ) : (
               <div className="confirmation-section">
@@ -408,6 +470,43 @@ const SakeApp = () => {
                     {saving ? '登録中...' : '💾 この内容で登録'}
                   </button>
                   <button className="cancel-btn" onClick={() => { setAnalysisResult(null); setFrontImage(null); setBackImage(null); }}>❌ キャンセル</button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : showReportsManagement ? (
+          <div className="admin-content">
+            <div className="admin-list-header">
+              <h3>全評価管理（{allReports.length}件）</h3>
+              <button className="back-to-scan-btn" onClick={() => setShowReportsManagement(false)}>← 戻る</button>
+            </div>
+            <div className="admin-sake-list">
+              {allReports.length === 0 ? (
+                <div className="empty-list"><p>まだ評価が投稿されていません</p></div>
+              ) : allReports.map((report, idx) => (
+                <div key={idx} className="admin-report-card">
+                  <div className="admin-report-header">
+                    <div>
+                      <h4>{report.sakeName}</h4>
+                      <p className="admin-report-meta">{report.userName} - {new Date(report.timestamp).toLocaleString('ja-JP')}</p>
+                    </div>
+                    <div className="admin-report-score">{report.score}点</div>
+                  </div>
+                  {report.notes && <p className="admin-report-notes">{report.notes}</p>}
+                  <button className="delete-btn-small" onClick={() => setDeleteConfirm({type: 'report', sakeId: report.sakeId, key: report.key, name: `${report.sakeName}の評価（${report.userName}）`})}>🗑️ 削除</button>
+                </div>
+              ))}
+            </div>
+            {deleteConfirm && deleteConfirm.type === 'report' && (
+              <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
+                <div className="modal-content" onClick={e => e.stopPropagation()}>
+                  <h3>⚠️ 削除の確認</h3>
+                  <p className="modal-text"><strong>{deleteConfirm.name}</strong></p>
+                  <p className="modal-warning">この評価を削除してもよろしいですか？</p>
+                  <div className="modal-buttons">
+                    <button className="modal-btn delete-confirm-btn" onClick={() => deleteReportAsAdmin(deleteConfirm.sakeId, deleteConfirm.key)}>削除する</button>
+                    <button className="modal-btn cancel-confirm-btn" onClick={() => setDeleteConfirm(null)}>キャンセル</button>
+                  </div>
                 </div>
               </div>
             )}
@@ -622,26 +721,35 @@ const SakeApp = () => {
     const [formData, setFormData] = useState(
       editingReport || { sweetness:3, aroma:3, body:3, acidity:3, finish:2, clarity:'透明', temperature:'冷', score:85, notes:'' }
     );
+    const [submitting, setSubmitting] = useState(false);
 
     const submitReport = async () => {
-      if (editingReportKey) {
-        await dbRemove(`reports/${selectedSake.id}/${editingReportKey}`);
+      setSubmitting(true);
+      try {
+        if (editingReportKey) {
+          await dbRemove(`reports/${selectedSake.id}/${editingReportKey}`);
+        }
+        const report = {
+          ...formData,
+          sakeId: selectedSake.id,
+          sakeName: selectedSake.name,
+          userName: userName || 'ゲスト',
+          timestamp: new Date().toISOString()
+        };
+        await saveReport(selectedSake.id, report);
+        const reports = await loadReports(selectedSake.id);
+        const avg = reports.reduce((s, r) => s + r.score, 0) / reports.length;
+        await saveSake({ ...selectedSake, rating: avg, reportCount: reports.length });
+        setEditingReport(null);
+        setEditingReportKey(null);
+        alert(editingReportKey ? '評価を更新しました！' : '評価を送信しました！');
+        setCurrentScreen(editingReportKey ? 'mypage' : 'sakeDetail');
+      } catch (error) {
+        console.error('Submit error:', error);
+        alert('❌ 送信に失敗しました。もう一度お試しください。');
+      } finally {
+        setSubmitting(false);
       }
-      const report = {
-        ...formData,
-        sakeId: selectedSake.id,
-        sakeName: selectedSake.name,
-        userName: userName || 'ゲスト',
-        timestamp: new Date().toISOString()
-      };
-      await saveReport(selectedSake.id, report);
-      const reports = await loadReports(selectedSake.id);
-      const avg = reports.reduce((s, r) => s + r.score, 0) / reports.length;
-      await saveSake({ ...selectedSake, rating: avg, reportCount: reports.length });
-      setEditingReport(null);
-      setEditingReportKey(null);
-      alert(editingReportKey ? '評価を更新しました！' : '評価を送信しました！');
-      setCurrentScreen(editingReportKey ? 'mypage' : 'sakeDetail');
     };
 
     return (
@@ -670,19 +778,11 @@ const SakeApp = () => {
           <p className="sake-meta">{selectedSake?.category} {selectedSake?.brewery}</p>
           <div className="evaluation-section">
             <h4>味の構成</h4>
-            {[
-              {key:'sweetness',label:'甘辛度',l:'甘',r:'辛',max:5},
-              {key:'aroma',label:'香りの強さ',l:'穏やか',r:'華やか',max:5},
-              {key:'body',label:'濃淡',l:'淡麗',r:'濃厚',max:5},
-              {key:'acidity',label:'酸味',l:'弱い',r:'強い',max:5},
-              {key:'finish',label:'余韻（後味）',l:'短い',r:'長い',max:3}
-            ].map(s => (
-              <div key={s.key} className="slider-group">
-                <label><span>{s.label}</span><span className="range-label">1-{s.max}</span></label>
-                <div className="slider-labels"><span>{s.l}</span><span>{s.r}</span></div>
-                <input type="range" min="1" max={s.max} value={formData[s.key]} onChange={e => setFormData({...formData, [s.key]: parseInt(e.target.value)})} className="custom-slider" />
-              </div>
-            ))}
+            <StarRating value={formData.sweetness} maxStars={5} onChange={v => setFormData({...formData, sweetness: v})} label="甘辛度" leftLabel="甘" rightLabel="辛" />
+            <StarRating value={formData.aroma} maxStars={5} onChange={v => setFormData({...formData, aroma: v})} label="香りの強さ" leftLabel="穏やか" rightLabel="華やか" />
+            <StarRating value={formData.body} maxStars={5} onChange={v => setFormData({...formData, body: v})} label="濃淡" leftLabel="淡麗" rightLabel="濃厚" />
+            <StarRating value={formData.acidity} maxStars={5} onChange={v => setFormData({...formData, acidity: v})} label="酸味" leftLabel="弱い" rightLabel="強い" />
+            <StarRating value={formData.finish} maxStars={3} onChange={v => setFormData({...formData, finish: v})} label="余韻（後味）" leftLabel="短い" rightLabel="長い" />
           </div>
           <div className="state-section">
             <h4>状態・温度</h4>
@@ -690,7 +790,7 @@ const SakeApp = () => {
               <p className="option-label">にごりの状態</p>
               <div className="button-group">
                 {['透明','うっすら濁り','白濁','その他'].map(o => (
-                  <button key={o} className={'option-btn ' + (formData.clarity === o ? 'active' : '')} onClick={() => setFormData({...formData, clarity: o})}>{o}</button>
+                  <button key={o} type="button" className={'option-btn ' + (formData.clarity === o ? 'active' : '')} onClick={() => setFormData({...formData, clarity: o})}>{o}</button>
                 ))}
               </div>
             </div>
@@ -698,7 +798,7 @@ const SakeApp = () => {
               <p className="option-label">最適な温度帯</p>
               <div className="button-group">
                 {['冷','常温','燗'].map(o => (
-                  <button key={o} className={'option-btn ' + (formData.temperature === o ? 'active' : '')} onClick={() => setFormData({...formData, temperature: o})}>{o}</button>
+                  <button key={o} type="button" className={'option-btn ' + (formData.temperature === o ? 'active' : '')} onClick={() => setFormData({...formData, temperature: o})}>{o}</button>
                 ))}
               </div>
             </div>
@@ -715,7 +815,15 @@ const SakeApp = () => {
             <h4>テイスティングメモ</h4>
             <textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} placeholder="若い果実（桃・梨）、膨らみなど、料理名など、自由にどうぞ。" rows="4" />
           </div>
-          <button className="submit-btn" onClick={submitReport}>{editingReportKey ? '✏️ 評価を更新する' : '✏️ 評価を送信する'}</button>
+          <button className="submit-btn" onClick={submitReport} disabled={submitting}>
+            {submitting ? '送信中...' : (editingReportKey ? '✏️ 評価を更新する' : '✏️ 評価を送信する')}
+          </button>
+          {submitting && (
+            <div className="submitting-overlay">
+              <div className="spinner"></div>
+              <p>評価を送信しています...</p>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1100,6 +1208,22 @@ const SakeApp = () => {
 .custom-slider{width:100%;height:8px;-webkit-appearance:none;appearance:none;background:#e0e0e0;border-radius:4px;outline:none}
 .custom-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:24px;height:24px;background:#ff9800;border-radius:50%;cursor:pointer}
 .custom-slider::-moz-range-thumb{width:24px;height:24px;background:#ff9800;border-radius:50%;cursor:pointer;border:none}
+.star-rating-group{margin-bottom:24px}
+.star-rating-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.star-rating-header label{font-size:14px;font-weight:500;color:#555}
+.star-count{color:#ff9800;font-size:14px;font-weight:600}
+.star-rating-container{display:flex;gap:8px;justify-content:center;margin-top:12px}
+.star-btn{background:none;border:none;font-size:36px;cursor:pointer;padding:4px;filter:grayscale(100%);opacity:0.3;transition:all 0.2s}
+.star-btn.active{filter:grayscale(0%);opacity:1;transform:scale(1.1)}
+.star-btn:hover{transform:scale(1.15)}
+.submitting-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:2000}
+.submitting-overlay p{color:white;font-size:16px;margin-top:16px}
+.admin-report-card{background:white;border-radius:12px;padding:16px;margin-bottom:12px}
+.admin-report-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
+.admin-report-header h4{font-size:15px;margin:0 0 4px 0}
+.admin-report-meta{font-size:12px;color:#888;margin:0}
+.admin-report-score{background:#ff9800;color:white;padding:6px 12px;border-radius:12px;font-weight:600;font-size:14px;flex-shrink:0}
+.admin-report-notes{font-size:13px;color:#666;margin:8px 0 12px 0;line-height:1.5}
 .submit-btn{width:100%;padding:18px;background:linear-gradient(135deg,#3d4f7d 0%,#2d3e5e 100%);color:white;border:none;border-radius:50px;font-size:16px;font-weight:600;cursor:pointer;margin:20px 0}
 .option-group{margin-bottom:24px}
 .option-label{font-size:14px;font-weight:500;color:#555;margin-bottom:12px}
