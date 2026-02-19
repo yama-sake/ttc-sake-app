@@ -1255,8 +1255,8 @@ const SakeApp = () => {
 .button-group{display:flex;flex-wrap:wrap;gap:8px}
 .option-btn{padding:10px 20px;border:2px solid #e0e0e0;background:white;border-radius:20px;font-size:14px;color:#666;cursor:pointer}
 .option-btn.active{background:#3d4f7d;color:white;border-color:#3d4f7d}
-.score-input-wrapper{display:flex;align-items:center;gap:8px;margin-bottom:12px}
-.score-input{flex:1;padding:16px;border:2px solid #e0e0e0;border-radius:12px;font-size:32px;font-weight:700;color:#ff9800;text-align:center}
+.score-input-wrapper{display:flex;align-items:center;gap:8px;margin-bottom:12px;justify-content:center}
+.score-input{width:120px;padding:16px;border:2px solid #e0e0e0;border-radius:12px;font-size:32px;font-weight:700;color:#ff9800;text-align:center}
 .score-unit{font-size:20px;font-weight:600;color:#ff9800}
 .score-note{font-size:12px;color:#888;line-height:1.6}
 .notes-section textarea{width:100%;padding:16px;border:2px solid #e0e0e0;border-radius:12px;font-size:14px;font-family:inherit;resize:vertical;min-height:120px}
