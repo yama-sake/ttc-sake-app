@@ -332,21 +332,20 @@ const SakeApp = () => {
           body: JSON.stringify({ image: base64Data })
         });
         const data = await response.json();
-        
-        if (data.sakeInfo) {
-          // Gemini APIからの構造化されたデータを使用
-          setAnalysisResult({
-            name: data.sakeInfo.name || '',
-            category: data.sakeInfo.category || '',
-            brewery: data.sakeInfo.brewery || ''
-          });
-        } else {
-          throw new Error('解析結果が取得できませんでした');
+        const text = data.responses?.[0]?.fullTextAnnotation?.text || '';
+        const lines = [...new Set(text.split('\n').map(l => l.trim()).filter(l => l.length > 0))];
+        const categoryKeywords = ['純米大吟醸','純米吟醸','特別純米','純米酒','大吟醸','吟醸','特別本醸造','本醸造','普通酒'];
+        let detectedCategory = '';
+        for (const line of lines) {
+          for (const cat of categoryKeywords) {
+            if (line.includes(cat) && !detectedCategory) detectedCategory = cat;
+          }
         }
+        setAnalysisResult({ name: '', category: detectedCategory, brewery: '', lines });
       } catch (error) {
-        console.error('Gemini API error:', error);
+        console.error('Vision API error:', error);
         alert('❌ 解析に失敗しました。手動で入力してください。');
-        setAnalysisResult({ name: '', category: '', brewery: '' });
+        setAnalysisResult({ name: '', category: '', brewery: '', lines: [] });
       }
       setAnalyzing(false);
     };
@@ -431,12 +430,28 @@ const SakeApp = () => {
               </div>
             ) : (
               <div className="confirmation-section">
-                <h3>✅ 内容を確認・修正してください</h3>
-                <p className="confirmation-note">AIが読み取った結果です。間違いがあれば修正してください。</p>
+                <h3>✅ 読み取り結果から選んでください</h3>
+                <p className="confirmation-note">テキストをタップすると入力欄にセットされます</p>
+                {analysisResult.lines && analysisResult.lines.length > 0 && (
+                  <div className="ocr-lines-box">
+                    <p className="ocr-lines-label">📋 読み取ったテキスト（タップして使用）</p>
+                    <div className="ocr-lines-list">
+                      {analysisResult.lines.map((line, i) => (
+                        <div key={i} className="ocr-line-row">
+                          <span className="ocr-line-text">{line}</span>
+                          <div className="ocr-line-btns">
+                            <button className="ocr-use-btn" onClick={() => setAnalysisResult({...analysisResult, name: line})}>銘柄名</button>
+                            <button className="ocr-use-btn" onClick={() => setAnalysisResult({...analysisResult, brewery: line})}>蔵元</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="result-form">
                   <div className="form-group">
                     <label>銘柄名 *</label>
-                    <input type="text" value={analysisResult.name} onChange={(e) => setAnalysisResult({...analysisResult, name: e.target.value})} placeholder="例: 獺祭 磨き二割三分" />
+                    <input type="text" value={analysisResult.name} onChange={(e) => setAnalysisResult({...analysisResult, name: e.target.value})} placeholder="上のテキストをタップ or 直接入力" />
                   </div>
                   <div className="form-group">
                     <label>特定名称酒 *</label>
@@ -447,7 +462,7 @@ const SakeApp = () => {
                   </div>
                   <div className="form-group">
                     <label>蔵元（都道府県）</label>
-                    <input type="text" value={analysisResult.brewery} onChange={(e) => setAnalysisResult({...analysisResult, brewery: e.target.value})} placeholder="例: 旭酒造（山口県）" />
+                    <input type="text" value={analysisResult.brewery} onChange={(e) => setAnalysisResult({...analysisResult, brewery: e.target.value})} placeholder="上のテキストをタップ or 直接入力" />
                   </div>
                 </div>
                 <div className="confirmation-buttons">
