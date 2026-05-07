@@ -17,6 +17,11 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const database = getDatabase(firebaseApp);
 
+// ===== 合言葉設定 =====
+// 変更したい場合はこの値を書き換えて再デプロイしてください
+const SECRET_PASSWORD = 'sake2026';
+const PASSWORD_STORAGE_KEY = 'sakeApp_authenticated';
+
 // ===== Firebase操作ヘルパー =====
 const dbGet = async (path) => {
   const snapshot = await get(ref(database, path));
@@ -34,6 +39,7 @@ const dbRemove = async (path) => {
 // ===== メインアプリ =====
 const SakeApp = () => {
   const [currentScreen, setCurrentScreen] = useState('splash');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [mode, setMode] = useState(null);
   const [sakes, setSakes] = useState([]);
   const [selectedSake, setSelectedSake] = useState(null);
@@ -50,6 +56,10 @@ const SakeApp = () => {
   useEffect(() => {
     loadSakes();
     loadUserNameLocal();
+    // 認証済みかチェック
+    if (localStorage.getItem(PASSWORD_STORAGE_KEY) === 'true') {
+      setIsAuthenticated(true);
+    }
   }, []);
 
   // 名前はlocalStorageに保存（端末ごと）
@@ -160,6 +170,57 @@ const SakeApp = () => {
       <ellipse cx="155" cy="168" rx="20" ry="5" fill={color}/>
     </svg>
   );
+
+  // ===== 合言葉認証画面 =====
+  const PasswordScreen = () => {
+    const [inputPassword, setInputPassword] = useState('');
+    const [errorMessage, setErrorMessage] = useState('');
+    const [isShaking, setIsShaking] = useState(false);
+
+    const handleSubmit = () => {
+      if (inputPassword.trim() === SECRET_PASSWORD) {
+        localStorage.setItem(PASSWORD_STORAGE_KEY, 'true');
+        setIsAuthenticated(true);
+      } else {
+        setErrorMessage('合言葉が違います');
+        setIsShaking(true);
+        setInputPassword('');
+        setTimeout(() => setIsShaking(false), 500);
+      }
+    };
+
+    return (
+      <div className="screen splash-screen">
+        <div className="splash-content">
+          <div className="sake-logo">
+            <div className="logo-circle">
+              <div className="tokkuri-container">
+                <TokkuriSVG width={120} height={120} color="#2c3e50" />
+              </div>
+              <div className="logo-text">日本酒</div>
+              <div className="logo-dots"><span></span><span></span><span></span></div>
+            </div>
+          </div>
+          <h1 className="app-title">SAKE BOOK</h1>
+          <p className="app-subtitle">MEMORIES IN EVERY DROP</p>
+        </div>
+        <div className={'password-box ' + (isShaking ? 'shake' : '')}>
+          <p className="password-label">合言葉を入力してください</p>
+          <input
+            type="password"
+            className="password-input"
+            value={inputPassword}
+            onChange={(e) => { setInputPassword(e.target.value); setErrorMessage(''); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(); }}
+            placeholder="合言葉"
+            autoFocus
+          />
+          {errorMessage && <p className="password-error">{errorMessage}</p>}
+          <button className="splash-start-btn" onClick={handleSubmit}>入る</button>
+        </div>
+      </div>
+    );
+  };
 
   // ===== スプラッシュ画面 =====
   const SplashScreen = () => (
@@ -1074,15 +1135,16 @@ const SakeApp = () => {
   // ===== レンダリング =====
   return (
     <div className="sake-app">
-      {currentScreen === 'splash' && <SplashScreen />}
-      {currentScreen === 'home' && <HomeScreen />}
-      {currentScreen === 'admin' && <AdminScreen />}
-      {currentScreen === 'sakeList' && <SakeListScreen />}
-      {currentScreen === 'sakeDetail' && <SakeDetailScreen />}
-      {currentScreen === 'tastingForm' && <TastingFormScreen />}
-      {currentScreen === 'mypage' && <MyPageScreen />}
-      {currentScreen === 'community' && <CommunityScreen />}
-      {showNameInput && <NameInputModal />}
+      {!isAuthenticated && <PasswordScreen />}
+      {isAuthenticated && currentScreen === 'splash' && <SplashScreen />}
+      {isAuthenticated && currentScreen === 'home' && <HomeScreen />}
+      {isAuthenticated && currentScreen === 'admin' && <AdminScreen />}
+      {isAuthenticated && currentScreen === 'sakeList' && <SakeListScreen />}
+      {isAuthenticated && currentScreen === 'sakeDetail' && <SakeDetailScreen />}
+      {isAuthenticated && currentScreen === 'tastingForm' && <TastingFormScreen />}
+      {isAuthenticated && currentScreen === 'mypage' && <MyPageScreen />}
+      {isAuthenticated && currentScreen === 'community' && <CommunityScreen />}
+      {isAuthenticated && showNameInput && <NameInputModal />}
       <style>{`
 *{margin:0;padding:0;box-sizing:border-box}
 .sake-app{font-family:'Noto Sans JP',-apple-system,BlinkMacSystemFont,sans-serif;height:100vh;overflow:hidden}
@@ -1099,6 +1161,14 @@ const SakeApp = () => {
 .app-subtitle{font-size:14px;color:rgba(255,255,255,0.8);letter-spacing:4px;font-family:'Times New Roman',serif}
 .splash-start-btn{padding:16px 48px;background:rgba(255,255,255,0.9);color:#1a4d7a;border:none;border-radius:50px;font-size:18px;font-weight:600;cursor:pointer;transition:all 0.3s;box-shadow:0 4px 16px rgba(0,0,0,0.2);position:relative;z-index:1}
 .splash-start-btn:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,0.3)}
+.password-box{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:16px;padding:0 32px;width:100%;max-width:360px}
+.password-label{color:rgba(255,255,255,0.9);font-size:14px;letter-spacing:3px;margin-bottom:4px}
+.password-input{width:100%;padding:14px 20px;background:rgba(255,255,255,0.95);border:none;border-radius:12px;font-size:16px;color:#1a4d7a;text-align:center;letter-spacing:4px;outline:none;box-shadow:0 4px 16px rgba(0,0,0,0.15)}
+.password-input::placeholder{color:#9db4c8;letter-spacing:2px}
+.password-input:focus{box-shadow:0 4px 20px rgba(0,0,0,0.25)}
+.password-error{color:#ffd1d1;font-size:13px;margin-top:-4px;letter-spacing:1px}
+.password-box.shake{animation:shake 0.4s ease-in-out}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
 .screen{height:100vh;overflow-y:auto;background:linear-gradient(135deg,#f5f0e8 0%,#fde8d9 100%)}
 .header{display:flex;justify-content:space-between;align-items:center;padding:20px;background:transparent}
 .header h2{font-size:20px;font-weight:500;color:#5a5a5a;letter-spacing:2px;flex:1;text-align:center}
