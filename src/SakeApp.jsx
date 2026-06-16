@@ -225,6 +225,7 @@ const SakeApp = () => {
       if (inputPassword.trim() === SECRET_PASSWORD) {
         localStorage.setItem(PASSWORD_STORAGE_KEY, 'true');
         setIsAuthenticated(true);
+        setCurrentScreen('eventEntrance');
       } else {
         setErrorMessage('合言葉が違います');
         setIsShaking(true);
@@ -261,6 +262,7 @@ const SakeApp = () => {
           />
           {errorMessage && <p className="password-error">{errorMessage}</p>}
           <button className="splash-start-btn" onClick={handleSubmit}>入る</button>
+          <button onClick={() => setCurrentScreen('home')} style={{ marginTop: 12, background: 'none', border: 'none', color: '#888', fontSize: 14, cursor: 'pointer' }}>← トップへ戻る</button>
         </div>
       </div>
     );
@@ -333,7 +335,7 @@ const SakeApp = () => {
         <h3>メニューを選択</h3>
         <button
           className="mode-btn participant-btn"
-          onClick={() => setCurrentScreen('eventEntrance')}
+          onClick={() => setCurrentScreen(isAuthenticated ? 'eventEntrance' : 'password')}
         >🍶 イベント会場へ</button>
         <button
           className="mode-btn participant-btn"
@@ -1336,18 +1338,17 @@ const SakeApp = () => {
   // ===== レンダリング =====
   return (
     <div className="sake-app">
-      {!isAuthenticated && <PasswordScreen />}
-      {isAuthenticated && currentScreen === 'splash' && <SplashScreen />}
-      {isAuthenticated && currentScreen === 'home' && <HomeScreen />}
+      {currentScreen === 'password' && <PasswordScreen />}
+      {currentScreen === 'home' && <HomeScreen />}
+      {currentScreen === 'mybook' && <MyBookScreen />}
       {isAuthenticated && currentScreen === 'eventEntrance' && <EventEntranceScreen />}
-      {isAuthenticated && currentScreen === 'mybook' && <MyBookScreen />}
       {isAuthenticated && currentScreen === 'admin' && <AdminScreen />}
       {isAuthenticated && currentScreen === 'sakeList' && <SakeListScreen />}
       {isAuthenticated && currentScreen === 'sakeDetail' && <SakeDetailScreen />}
       {isAuthenticated && currentScreen === 'tastingForm' && <TastingFormScreen />}
       {isAuthenticated && currentScreen === 'mypage' && <MyPageScreen />}
       {isAuthenticated && currentScreen === 'community' && <CommunityScreen />}
-      {isAuthenticated && showNameInput && <NameInputModal />}
+      {showNameInput && <NameInputModal />}
       <style>{`
 *{margin:0;padding:0;box-sizing:border-box}
 .sake-app{font-family:'Noto Sans JP',-apple-system,BlinkMacSystemFont,sans-serif;height:100vh;overflow:hidden}
