@@ -327,32 +327,61 @@ const SakeApp = () => {
         </div>
       )}
       <div className="mode-selection">
-        <div className="sake-icon-circle" onClick={handleTokkuriTap} style={{ cursor: 'pointer' }}>
+        <div className="sake-icon-circle">
           <TokkuriSVG width={80} height={80} color="#2c3e50" />
         </div>
-        <h3>ご利用モードの選択</h3>
+        <h3>メニューを選択</h3>
+        <button
+          className="mode-btn participant-btn"
+          onClick={() => setCurrentScreen('eventEntrance')}
+        >🍶 イベント会場へ</button>
+        <button
+          className="mode-btn participant-btn"
+          style={{ marginTop: 12 }}
+          onClick={() => setCurrentScreen('mybook')}
+        >📖 マイ・酒メモリへ</button>
+      </div>
+    </div>
+  );
+
+  // ===== イベント会場 入口（参加者 / 管理者の選択） =====
+  const EventEntranceScreen = () => (
+    <div className="screen home-screen">
+      <div className="header">
+        <ChevronLeft size={24} onClick={() => setCurrentScreen('home')} />
+        <h2>イベント会場</h2>
+        <div style={{width:24}} />
+      </div>
+      {userName && (
+        <div className="user-greeting"><p>ようこそ、<strong>{userName}</strong>さん</p></div>
+      )}
+      <div className="mode-selection">
+        <div className="sake-icon-circle">
+          <TokkuriSVG width={80} height={80} color="#2c3e50" />
+        </div>
+        <h3>ご利用区分の選択</h3>
         <button
           className="mode-btn participant-btn"
           onClick={() => {
             if (!userName) { setShowNameInput(true); }
             else { setMode('participant'); setCurrentScreen('sakeList'); }
           }}
-        >🍶 イベント会場へ</button>
+        >参加者はこちら</button>
         <button
           className="mode-btn participant-btn"
-          style={{ marginTop: 12 }}
-          onClick={() => setCurrentScreen('mybook')}
-        >📖 マイ・サケブック</button>
+          style={{ marginTop: 12, background: '#fff', color: '#888', border: '2px solid #ddd' }}
+          onClick={handleTokkuriTap}
+        >管理者画面へ</button>
       </div>
     </div>
   );
 
-  // ===== マイ・サケブック（入口のみ・準備中） =====
+  // ===== マイ・酒メモリ（入口のみ・準備中） =====
   const MyBookScreen = () => (
     <div className="screen home-screen">
       <div className="header">
         <ChevronLeft size={24} onClick={() => setCurrentScreen('home')} />
-        <h2>マイ・サケブック</h2>
+        <h2>マイ・酒メモリ</h2>
         <div style={{width:24}} />
       </div>
       <div className="mode-selection" style={{ textAlign: 'center' }}>
@@ -361,7 +390,7 @@ const SakeApp = () => {
         </div>
         <h3>準備中です</h3>
         <p style={{ color: '#888', lineHeight: 1.9, marginTop: 12 }}>
-          自分専用のサケブック（プライベートで飲んだお酒の記録）は<br/>現在準備中です。近日公開予定です。
+          自分専用の酒メモリ（プライベートで飲んだお酒の記録）は<br/>現在準備中です。近日公開予定です。
         </p>
       </div>
     </div>
@@ -1310,6 +1339,7 @@ const SakeApp = () => {
       {!isAuthenticated && <PasswordScreen />}
       {isAuthenticated && currentScreen === 'splash' && <SplashScreen />}
       {isAuthenticated && currentScreen === 'home' && <HomeScreen />}
+      {isAuthenticated && currentScreen === 'eventEntrance' && <EventEntranceScreen />}
       {isAuthenticated && currentScreen === 'mybook' && <MyBookScreen />}
       {isAuthenticated && currentScreen === 'admin' && <AdminScreen />}
       {isAuthenticated && currentScreen === 'sakeList' && <SakeListScreen />}
