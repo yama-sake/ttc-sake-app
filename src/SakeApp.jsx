@@ -80,7 +80,7 @@ const RiceField = ({ value, onChange }) => {
 };
 
 const SakeApp = () => {
-  const [currentScreen, setCurrentScreen] = useState('splash');
+  const [currentScreen, setCurrentScreen] = useState('home');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [mode, setMode] = useState(null);
   const [sakes, setSakes] = useState([]);
@@ -225,6 +225,7 @@ const SakeApp = () => {
       if (inputPassword.trim() === SECRET_PASSWORD) {
         localStorage.setItem(PASSWORD_STORAGE_KEY, 'true');
         setIsAuthenticated(true);
+        setCurrentScreen('eventEntrance');
       } else {
         setErrorMessage('合言葉が違います');
         setIsShaking(true);
@@ -261,6 +262,7 @@ const SakeApp = () => {
           />
           {errorMessage && <p className="password-error">{errorMessage}</p>}
           <button className="splash-start-btn" onClick={handleSubmit}>入る</button>
+          <button onClick={() => setCurrentScreen('home')} style={{ marginTop: 12, background: 'none', border: 'none', color: '#888', fontSize: 14, cursor: 'pointer' }}>← トップへ戻る</button>
         </div>
       </div>
     );
@@ -316,7 +318,7 @@ const SakeApp = () => {
 
   // ===== ホーム画面 =====
   const HomeScreen = () => (
-    <div className="screen home-screen">
+    <div className="screen home-screen home-top">
       <div className="header">
         <h2>SAKE BOOK</h2>
         <Settings size={24} className="settings-icon" onClick={() => setShowNameInput(true)} />
@@ -327,17 +329,71 @@ const SakeApp = () => {
         </div>
       )}
       <div className="mode-selection">
-        <div className="sake-icon-circle" onClick={handleTokkuriTap} style={{ cursor: 'pointer' }}>
+        <div className="sake-icon-circle">
           <TokkuriSVG width={80} height={80} color="#2c3e50" />
         </div>
-        <h3>ご利用モードの選択</h3>
+        <h3>メニューを選択</h3>
+        <button
+          className="mode-btn participant-btn"
+          onClick={() => setCurrentScreen(isAuthenticated ? 'eventEntrance' : 'password')}
+        >🍶 イベント会場へ</button>
+        <button
+          className="mode-btn participant-btn"
+          style={{ marginTop: 12 }}
+          onClick={() => setCurrentScreen('mybook')}
+        >📖 マイ・酒メモリへ</button>
+      </div>
+    </div>
+  );
+
+  // ===== イベント会場 入口（参加者 / 管理者の選択） =====
+  const EventEntranceScreen = () => (
+    <div className="screen home-screen">
+      <div className="header">
+        <ChevronLeft size={24} onClick={() => setCurrentScreen('home')} />
+        <h2>イベント会場</h2>
+        <div style={{width:24}} />
+      </div>
+      {userName && (
+        <div className="user-greeting"><p>ようこそ、<strong>{userName}</strong>さん</p></div>
+      )}
+      <div className="mode-selection">
+        <div className="sake-icon-circle">
+          <TokkuriSVG width={80} height={80} color="#2c3e50" />
+        </div>
+        <h3>ご利用区分の選択</h3>
         <button
           className="mode-btn participant-btn"
           onClick={() => {
             if (!userName) { setShowNameInput(true); }
             else { setMode('participant'); setCurrentScreen('sakeList'); }
           }}
-        >参加者の方はこちら</button>
+        >参加者はこちら</button>
+        <button
+          className="mode-btn participant-btn"
+          style={{ marginTop: 12, background: '#fff', color: '#888', border: '2px solid #ddd' }}
+          onClick={handleTokkuriTap}
+        >管理者画面へ</button>
+      </div>
+    </div>
+  );
+
+  // ===== マイ・酒メモリ（入口のみ・準備中） =====
+  const MyBookScreen = () => (
+    <div className="screen home-screen">
+      <div className="header">
+        <ChevronLeft size={24} onClick={() => setCurrentScreen('home')} />
+        <h2>マイ・酒メモリ</h2>
+        <div style={{width:24}} />
+      </div>
+      <div className="mode-selection" style={{ textAlign: 'center' }}>
+        <div className="sake-icon-circle">
+          <TokkuriSVG width={80} height={80} color="#2c3e50" />
+        </div>
+        <h3>準備中です</h3>
+        <p style={{ color: '#888', lineHeight: 1.9, marginTop: 12 }}>
+          自分専用の酒メモリ（プライベートで飲んだお酒の記録）は<br/>現在準備中です。近日公開予定です。
+        </p>
       </div>
     </div>
   );
@@ -356,6 +412,8 @@ const SakeApp = () => {
     const [deleteConfirm, setDeleteConfirm] = useState(null);
     const [editingSake, setEditingSake] = useState(null);
     const [saving, setSaving] = useState(false);
+    const [savingMsg, setSavingMsg] = useState('登録しています...');
+    const submitGuardRef = useRef(false);
 
     useEffect(() => {
       if (showSakeList) loadAdminSakes();
@@ -476,7 +534,11 @@ const SakeApp = () => {
     const saveSakeEntry = async () => {
       if (!analysisResult.name.trim()) { alert('銘柄名を入力してください'); return; }
       if (!analysisResult.category) { alert('カテゴリーを選択してください'); return; }
+      if (submitGuardRef.current) return;
+      submitGuardRef.current = true;
+      setSavingMsg('登録しています...');
       setSaving(true);
+      try {
       const newSake = {
         id: Date.now().toString(),
         name: analysisResult.name.trim(),
@@ -493,7 +555,13 @@ const SakeApp = () => {
       await saveSake(newSake);
       alert('✅ 登録が完了しました！\n\n📝 銘柄: ' + newSake.name + '\n🏷️ カテゴリー: ' + newSake.category + '\n🏭 蔵元: ' + newSake.brewery + (newSake.prefecture ? '\n📍 都道府県: ' + newSake.prefecture : '') + (newSake.sakeRice ? '\n🌾 酒米: ' + newSake.sakeRice : ''));
       setAnalysisResult(null); setFrontImage(null); setBackImage(null);
-      setSaving(false);
+      } catch (e) {
+        console.error('登録エラー:', e);
+        alert('❌ 登録に失敗しました。もう一度お試しください。');
+      } finally {
+        setSaving(false);
+        submitGuardRef.current = false;
+      }
     };
 
     const deleteSakeEntry = async (sakeId) => {
@@ -506,11 +574,23 @@ const SakeApp = () => {
 
     const updateSakeEntry = async () => {
       if (!editingSake) return;
-      await saveSake(editingSake);
-      await loadAdminSakes();
-      await loadSakes();
-      setEditingSake(null);
-      alert('✅ 更新しました');
+      if (submitGuardRef.current) return;
+      submitGuardRef.current = true;
+      setSavingMsg('更新しています...');
+      setSaving(true);
+      try {
+        await saveSake(editingSake);
+        await loadAdminSakes();
+        await loadSakes();
+        setEditingSake(null);
+        alert('✅ 更新しました');
+      } catch (e) {
+        console.error('更新エラー:', e);
+        alert('❌ 更新に失敗しました。もう一度お試しください。');
+      } finally {
+        setSaving(false);
+        submitGuardRef.current = false;
+      }
     };
 
     const categoryOptions = ['純米大吟醸','純米吟醸','特別純米','純米酒','大吟醸','吟醸','特別本醸造','本醸造','普通酒','その他','不明'];
@@ -687,7 +767,7 @@ const SakeApp = () => {
                     <div className="form-group"><label>酒米</label><RiceField value={editingSake.sakeRice} onChange={(val) => setEditingSake({...editingSake, sakeRice: val})} /></div>
                   </div>
                   <div className="modal-buttons">
-                    <button className="modal-btn save-btn" onClick={updateSakeEntry}>更新</button>
+                    <button className="modal-btn save-btn" onClick={updateSakeEntry} disabled={saving}>{saving ? '更新中...' : '更新'}</button>
                     <button className="modal-btn cancel-confirm-btn" onClick={() => setEditingSake(null)}>キャンセル</button>
                   </div>
                 </div>
@@ -706,6 +786,12 @@ const SakeApp = () => {
                 </div>
               </div>
             )}
+          </div>
+        )}
+        {saving && (
+          <div className="submitting-overlay">
+            <div className="spinner"></div>
+            <p>{savingMsg}</p>
           </div>
         )}
         <BottomNav screen="admin" />
@@ -904,8 +990,11 @@ const SakeApp = () => {
       editingReport || { sweetness:3, aroma:3, body:3, acidity:3, finish:2, clarity:'透明', temperature:'冷', score:85, notes:'' }
     );
     const [submitting, setSubmitting] = useState(false);
+    const submitGuardRef = useRef(false);
 
     const submitReport = async () => {
+      if (submitGuardRef.current) return;
+      submitGuardRef.current = true;
       setSubmitting(true);
       try {
         if (editingReportKey) {
@@ -931,6 +1020,7 @@ const SakeApp = () => {
         alert('❌ 送信に失敗しました。もう一度お試しください。');
       } finally {
         setSubmitting(false);
+        submitGuardRef.current = false;
       }
     };
 
@@ -1248,16 +1338,17 @@ const SakeApp = () => {
   // ===== レンダリング =====
   return (
     <div className="sake-app">
-      {!isAuthenticated && <PasswordScreen />}
-      {isAuthenticated && currentScreen === 'splash' && <SplashScreen />}
-      {isAuthenticated && currentScreen === 'home' && <HomeScreen />}
+      {currentScreen === 'password' && <PasswordScreen />}
+      {currentScreen === 'home' && <HomeScreen />}
+      {currentScreen === 'mybook' && <MyBookScreen />}
+      {isAuthenticated && currentScreen === 'eventEntrance' && <EventEntranceScreen />}
       {isAuthenticated && currentScreen === 'admin' && <AdminScreen />}
       {isAuthenticated && currentScreen === 'sakeList' && <SakeListScreen />}
       {isAuthenticated && currentScreen === 'sakeDetail' && <SakeDetailScreen />}
       {isAuthenticated && currentScreen === 'tastingForm' && <TastingFormScreen />}
       {isAuthenticated && currentScreen === 'mypage' && <MyPageScreen />}
       {isAuthenticated && currentScreen === 'community' && <CommunityScreen />}
-      {isAuthenticated && showNameInput && <NameInputModal />}
+      {showNameInput && <NameInputModal />}
       <style>{`
 *{margin:0;padding:0;box-sizing:border-box}
 .sake-app{font-family:'Noto Sans JP',-apple-system,BlinkMacSystemFont,sans-serif;height:100vh;overflow:hidden}
@@ -1283,6 +1374,10 @@ const SakeApp = () => {
 .password-box.shake{animation:shake 0.4s ease-in-out}
 @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
 .screen{height:100vh;overflow-y:auto;background:linear-gradient(135deg,#f5f0e8 0%,#fde8d9 100%)}
+        .home-top{background-color:#1a4d7a !important;background-image:radial-gradient(circle at 25% 25%,rgba(255,255,255,0.05) 2%,transparent 2%),radial-gradient(circle at 75% 75%,rgba(255,255,255,0.05) 2%,transparent 2%) !important;background-size:60px 60px}
+        .home-top .header h2{color:#fff}
+        .home-top .settings-icon{color:rgba(255,255,255,0.9)}
+        .home-top .mode-selection h3{color:rgba(255,255,255,0.92)}
 .header{display:flex;justify-content:space-between;align-items:center;padding:20px;background:transparent}
 .header h2{font-size:20px;font-weight:500;color:#5a5a5a;letter-spacing:2px;flex:1;text-align:center}
 .header svg{cursor:pointer}
