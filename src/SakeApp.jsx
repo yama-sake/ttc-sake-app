@@ -318,7 +318,7 @@ const SakeApp = () => {
 
   // ===== ホーム画面 =====
   const HomeScreen = () => (
-    <div className="screen home-screen">
+    <div className="screen home-screen home-top">
       <div className="header">
         <h2>SAKE BOOK</h2>
         <Settings size={24} className="settings-icon" onClick={() => setShowNameInput(true)} />
@@ -1374,6 +1374,10 @@ const SakeApp = () => {
 .password-box.shake{animation:shake 0.4s ease-in-out}
 @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
 .screen{height:100vh;overflow-y:auto;background:linear-gradient(135deg,#f5f0e8 0%,#fde8d9 100%)}
+        .home-top{background-color:#1a4d7a !important;background-image:radial-gradient(circle at 25% 25%,rgba(255,255,255,0.05) 2%,transparent 2%),radial-gradient(circle at 75% 75%,rgba(255,255,255,0.05) 2%,transparent 2%) !important;background-size:60px 60px}
+        .home-top .header h2{color:#fff}
+        .home-top .settings-icon{color:rgba(255,255,255,0.9)}
+        .home-top .mode-selection h3{color:rgba(255,255,255,0.92)}
 .header{display:flex;justify-content:space-between;align-items:center;padding:20px;background:transparent}
 .header h2{font-size:20px;font-weight:500;color:#5a5a5a;letter-spacing:2px;flex:1;text-align:center}
 .header svg{cursor:pointer}
