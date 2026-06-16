@@ -50,7 +50,7 @@ const PREFECTURES_BY_REGION = {
 const ALL_PREFECTURES = Object.values(PREFECTURES_BY_REGION).flat();
 const SAKE_RICE_OPTIONS = ['山田錦','五百万石','美山錦','雄町','愛山','出羽燦々','八反錦','亀の尾','秋田酒こまち','吟風','彗星','百万石乃白','越淡麗','ひとごこち','山田穂','渡船','きたしずく','風さやか','玉栄','強力'];
 const RICE_OTHER = 'その他';
-const RICE_UNKNOWN = '不明（後で入力）';
+const RICE_UNKNOWN = '不明';
 
 const PrefectureSelect = ({ value, onChange }) => (
   <select value={value || ''} onChange={onChange}>
