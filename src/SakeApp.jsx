@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, Settings, Home, Clipboard, User, ChevronLeft, Search, Trophy } from 'lucide-react';
+import { Camera, Settings, Home, Clipboard, User, ChevronLeft, Search, Trophy, Wine, BookOpen, ExternalLink, ArrowRight } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, set, get, remove, child, onValue } from 'firebase/database';
 
@@ -318,32 +318,36 @@ const SakeApp = () => {
 
   // ===== ホーム画面 =====
   const HomeScreen = () => (
-    <div className="screen home-screen home-top">
-      <div className="header">
-        <h2>SAKE BOOK</h2>
-        <Settings size={24} className="settings-icon" onClick={() => setShowNameInput(true)} />
+    <div className="screen home-cover">
+      <Settings size={20} className="cover-settings" onClick={() => setShowNameInput(true)} />
+      <div className="cover-brand">
+        <div className="cover-shucho-line" />
+        <div className="cover-shucho">酒帖</div>
+        <h2 className="cover-title">SAKE<br />BOOK</h2>
+        <p className="cover-tagline">推しの一献を綴る</p>
       </div>
-      <p className="home-tagline">推しの一本を、記録する</p>
-      {userName && (
-        <div className="user-greeting">
-          <p>ようこそ、<strong>{userName}</strong>さん</p>
+      <div className="cover-dock">
+        <div className="cover-tiles">
+          <button
+            className="cover-tile cover-tile-primary"
+            onClick={() => setCurrentScreen(isAuthenticated ? 'eventEntrance' : 'password')}
+          >
+            <span className="cover-tile-chip"><Wine size={22} /></span>
+            <span className="cover-tile-label">イベント会場</span>
+            <span className="cover-tile-sub">EVENT</span>
+          </button>
+          <button
+            className="cover-tile cover-tile-secondary"
+            onClick={() => setCurrentScreen('mybook')}
+          >
+            <span className="cover-tile-chip cover-tile-chip-outline"><BookOpen size={21} /></span>
+            <span className="cover-tile-label">酒メモリ</span>
+            <span className="cover-tile-sub">MY BOOK</span>
+          </button>
         </div>
-      )}
-      <div className="mode-selection">
-        <div className="sake-icon-circle">
-          <TokkuriSVG width={80} height={80} color="#2c3e50" />
-        </div>
-        <h3>メニューを選択</h3>
-        <button
-          className="mode-btn btn-gold"
-          onClick={() => setCurrentScreen(isAuthenticated ? 'eventEntrance' : 'password')}
-        >🍶 イベント会場へ</button>
-        <button
-          className="mode-btn btn-outline-cream"
-          style={{ marginTop: 12 }}
-          onClick={() => setCurrentScreen('mybook')}
-        >📖 マイ・酒メモリへ</button>
-        <a href="https://tokyotc.com/sake/" target="_blank" rel="noopener noreferrer" className="event-link">イベントホームページはこちら →</a>
+        <a href="https://tokyotc.com/sake/" target="_blank" rel="noopener noreferrer" className="cover-site">
+          <ExternalLink size={15} /> OFFICIAL SITE へ <ArrowRight size={15} />
+        </a>
       </div>
     </div>
   );
@@ -1392,6 +1396,25 @@ const SakeApp = () => {
         .event-entrance .header h2{color:#16365c}
         .event-entrance .mode-selection h3{color:#5a6b7a}
         .event-entrance .sake-icon-circle{background:#fbf6ec;border:2px solid #c9a96a}
+        .home-cover{background:#f1eee6 !important;overflow:hidden}
+        .cover-settings{position:absolute;top:16px;left:16px;color:#bcae9a;z-index:6;cursor:pointer}
+        .cover-brand{position:relative;padding:48px 0 0 26px;min-height:206px}
+        .cover-shucho{position:absolute;top:22px;right:26px;writing-mode:vertical-rl;font-family:'Yu Mincho','Hiragino Mincho ProN','Noto Serif JP',serif;font-size:46px;letter-spacing:8px;color:#6e77a6;line-height:1}
+        .cover-shucho-line{position:absolute;top:28px;right:18px;width:2px;height:102px;background:#7a82ac}
+        .cover-title{font-family:Georgia,'Times New Roman',serif;font-size:30px;letter-spacing:4px;color:#2a3158;font-weight:500;line-height:1.12;margin:0}
+        .cover-tagline{font-size:12px;letter-spacing:2px;color:#8a90ac;margin:14px 0 0}
+        .cover-dock{position:absolute;left:0;right:0;bottom:0;background:#e9e6dc;border-top:1px solid #dad6c8;border-radius:24px 24px 0 0;padding:22px 18px 26px}
+        .cover-tiles{display:flex;gap:12px}
+        .cover-tile{flex:1;border-radius:16px;padding:18px 8px;display:flex;flex-direction:column;align-items:center;cursor:pointer;border:1px solid transparent;font-family:inherit;transition:transform 0.15s}
+        .cover-tile:active{transform:scale(0.97)}
+        .cover-tile-primary{background:#e7eaf5;border-color:#b9c2e0}
+        .cover-tile-secondary{background:#fcfaf4;border-color:#e0dccd}
+        .cover-tile-chip{width:46px;height:46px;border-radius:13px;background:#34407a;display:flex;align-items:center;justify-content:center;color:#fff;margin-bottom:10px}
+        .cover-tile-chip-outline{background:transparent;border:1px solid #c7c2b0;color:#5a5f6e}
+        .cover-tile-label{font-size:15px;font-weight:600;color:#2a3158}
+        .cover-tile-sub{font-size:9px;letter-spacing:2px;color:#8089a8;margin-top:4px}
+        .cover-tile-secondary .cover-tile-sub{color:#a59a86}
+        .cover-site{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px;background:#e7eaf5;border:1px solid #c3cae2;border-radius:13px;padding:14px;color:#34407a;font-size:13px;font-weight:600;letter-spacing:1px;text-decoration:none}
 .header{display:flex;justify-content:space-between;align-items:center;padding:20px;background:transparent}
 .header h2{font-size:20px;font-weight:500;color:#5a5a5a;letter-spacing:2px;flex:1;text-align:center}
 .header svg{cursor:pointer}
