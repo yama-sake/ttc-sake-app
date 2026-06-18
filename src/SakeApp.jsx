@@ -90,6 +90,7 @@ const SakeApp = () => {
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterRegion, setFilterRegion] = useState('all');
   const [filterRice, setFilterRice] = useState('all');
+  const [filterEvent, setFilterEvent] = useState('all');
   const [userName, setUserName] = useState('');
   const [showNameInput, setShowNameInput] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
@@ -413,6 +414,7 @@ const SakeApp = () => {
     const [adminSakes, setAdminSakes] = useState([]);
     const [deleteConfirm, setDeleteConfirm] = useState(null);
     const [editingSake, setEditingSake] = useState(null);
+    const [eventNo, setEventNo] = useState(() => localStorage.getItem('lastEventNo') || '');
     const [saving, setSaving] = useState(false);
     const [savingMsg, setSavingMsg] = useState('登録しています...');
     const submitGuardRef = useRef(false);
@@ -552,9 +554,11 @@ const SakeApp = () => {
         backImage,
         rating: 0,
         reportCount: 0,
+        eventNo: eventNo !== '' ? Number(eventNo) : null,
         createdAt: new Date().toISOString()
       };
       await saveSake(newSake);
+      if (eventNo !== '') localStorage.setItem('lastEventNo', eventNo);
       alert('✅ 登録が完了しました！\n\n📝 銘柄: ' + newSake.name + '\n🏷️ カテゴリー: ' + newSake.category + '\n🏭 蔵元: ' + newSake.brewery + (newSake.prefecture ? '\n📍 都道府県: ' + newSake.prefecture : '') + (newSake.sakeRice ? '\n🌾 酒米: ' + newSake.sakeRice : ''));
       setAnalysisResult(null); setFrontImage(null); setBackImage(null);
       } catch (e) {
@@ -681,6 +685,10 @@ const SakeApp = () => {
                     <label>酒米</label>
                     <RiceField value={analysisResult.sakeRice} onChange={(val) => setAnalysisResult({...analysisResult, sakeRice: val})} />
                   </div>
+                  <div className="form-group">
+                    <label>イベント回</label>
+                    <input type="number" inputMode="numeric" min="1" value={eventNo} onChange={(e) => setEventNo(e.target.value.replace(/[^0-9]/g, ''))} placeholder="例：5（前回の値を記憶します）" />
+                  </div>
                 </div>
                 <div className="confirmation-buttons">
                   <button className="save-btn" onClick={saveSakeEntry} disabled={saving}>
@@ -767,6 +775,7 @@ const SakeApp = () => {
                     <div className="form-group"><label>蔵元</label><input type="text" value={editingSake.brewery || ''} onChange={(e) => setEditingSake({...editingSake, brewery: e.target.value})} /></div>
                     <div className="form-group"><label>都道府県</label><PrefectureSelect value={editingSake.prefecture} onChange={(e) => setEditingSake({...editingSake, prefecture: e.target.value})} /></div>
                     <div className="form-group"><label>酒米</label><RiceField value={editingSake.sakeRice} onChange={(val) => setEditingSake({...editingSake, sakeRice: val})} /></div>
+                    <div className="form-group"><label>イベント回</label><input type="number" inputMode="numeric" min="1" value={editingSake.eventNo ?? ''} onChange={(e) => setEditingSake({...editingSake, eventNo: e.target.value === '' ? null : Number(e.target.value.replace(/[^0-9]/g, ''))})} placeholder="例：5" /></div>
                   </div>
                   <div className="modal-buttons">
                     <button className="modal-btn save-btn" onClick={updateSakeEntry} disabled={saving}>{saving ? '更新中...' : '更新'}</button>
@@ -823,8 +832,10 @@ const SakeApp = () => {
       matchesCategory(s)
       && (filterRegion === 'all' || regionOf(s.prefecture) === filterRegion)
       && (filterRice === 'all' || (s.sakeRice || '') === filterRice)
+      && (filterEvent === 'all' || s.eventNo === filterEvent)
     );
     const presentRegions = Object.keys(PREFECTURES_BY_REGION).filter(r => sakes.some(s => regionOf(s.prefecture) === r));
+    const presentEvents = [...new Set(sakes.map(s => s.eventNo).filter(v => v != null && v !== ''))].sort((a, b) => a - b);
     const riceOrder = [...SAKE_RICE_OPTIONS, RICE_OTHER, RICE_UNKNOWN];
     const presentRices = [...new Set(sakes.map(s => s.sakeRice).filter(Boolean))]
       .sort((a, b) => {
@@ -857,6 +868,14 @@ const SakeApp = () => {
             <button className={'category-tab ' + (filterRice === 'all' ? 'active' : '')} onClick={() => setFilterRice('all')}>酒米：すべて</button>
             {presentRices.map(r => (
               <button key={r} className={'category-tab ' + (filterRice === r ? 'active' : '')} onClick={() => setFilterRice(r)}>{r}</button>
+            ))}
+          </div>
+        )}
+        {presentEvents.length > 0 && (
+          <div className="category-tabs">
+            <button className={'category-tab ' + (filterEvent === 'all' ? 'active' : '')} onClick={() => setFilterEvent('all')}>回：すべて</button>
+            {presentEvents.map(n => (
+              <button key={n} className={'category-tab ' + (filterEvent === n ? 'active' : '')} onClick={() => setFilterEvent(n)}>第{n}回</button>
             ))}
           </div>
         )}
@@ -1221,6 +1240,7 @@ const SakeApp = () => {
     const [allReports, setAllReports] = useState([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('ranking');
+    const [filterEventNo, setFilterEventNo] = useState('all');
 
     useEffect(() => {
       (async () => { setLoading(true); setAllReports(await loadAllReports()); setLoading(false); })();
@@ -1238,6 +1258,8 @@ const SakeApp = () => {
     const sakeRanking = Object.values(sakeMap)
       .map(s => ({...s, avg: s.scores.reduce((a,b) => a+b, 0) / s.scores.length, count: s.scores.length}))
       .sort((a,b) => b.avg - a.avg);
+    const presentEventsC = [...new Set(sakes.map(s => s.eventNo).filter(v => v != null && v !== ''))].sort((a, b) => a - b);
+    const filteredRanking = filterEventNo === 'all' ? sakeRanking : sakeRanking.filter(sake => { const sd = sakes.find(s => s.id === sake.sakeId); return sd && sd.eventNo === filterEventNo; });
 
     const pMap = {};
     allReports.forEach(r => {
@@ -1286,10 +1308,18 @@ const SakeApp = () => {
               <div className="stat-card"><div className="stat-icon">⭐</div><div className="stat-value">{overallAvg}</div><div className="stat-label">平均点</div></div>
             </div>
             <h3 className="ranking-heading">🏆 人気ランキング</h3>
+            {presentEventsC.length > 0 && (
+              <div className="category-tabs">
+                <button className={'category-tab ' + (filterEventNo === 'all' ? 'active' : '')} onClick={() => setFilterEventNo('all')}>回：すべて</button>
+                {presentEventsC.map(n => (
+                  <button key={n} className={'category-tab ' + (filterEventNo === n ? 'active' : '')} onClick={() => setFilterEventNo(n)}>第{n}回</button>
+                ))}
+              </div>
+            )}
             <div className="ranking-list">
-              {sakeRanking.map((sake, idx) => {
+              {filteredRanking.map((sake, idx) => {
                 const sd = sakes.find(s => s.id === sake.sakeId);
-                const rank = getRank(sakeRanking, idx, 'avg');
+                const rank = getRank(filteredRanking, idx, 'avg');
                 const realRank = rank - 1;
                 return (
                   <div key={sake.sakeId} className={'ranking-card' + (realRank < 3 ? ' medal' : '')} style={realRank < 3 ? {borderLeft:'4px solid '+medalColors[realRank]} : {}} onClick={() => { if(sd){ setSelectedSake(sd); setCurrentScreen('sakeDetail'); } }}>
