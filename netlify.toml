@@ -1,0 +1,25 @@
+# Netlify 設定（SAKE BOOK）
+#
+# このファイルがあると、Netlifyでリポジトリを繋ぐだけで
+# ビルド設定・関数・リダイレクトが自動で適用される。
+
+[build]
+  command = "npm run build"   # Viteでクライアントをビルド
+  publish = "dist"            # 公開するフォルダ
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"    # 相対import（../../lib）を確実に同梱
+
+# /api/vision を Netlify Function に転送（アプリのコードは変更不要）
+[[redirects]]
+  from = "/api/vision"
+  to = "/.netlify/functions/vision"
+  status = 200
+
+# SPAフォールバック（どのパスでも index.html を返す）
+# ※ 上の /api/vision ルールより後に置くこと（順番に評価される）
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
