@@ -1371,8 +1371,9 @@ const SakeApp = () => {
               <li><strong>「参加者はこちら」</strong>から、会場の酒リストへ進みます。</li>
               <li>飲んだお酒を選び、<strong>星</strong>（甘辛度・香りなど）と<strong>推し度の点数</strong>をつけて送信します。</li>
               <li><strong>「みんなの記録」</strong>で、人気ランキングをみんなで楽しめます。</li>
+              <li>一度送信した評価は、画面下の「マイページ」を開き、該当のお酒の「✏️ 編集」ボタンから修正できます（削除も同じ場所からできます）。</li>
             </ol>
-            <p className="guide-note">※お名前は最初に一度だけ設定します。評価はあとから編集・削除できます。</p>
+            <p className="guide-note">※お名前は最初に一度だけ設定します。</p>
             <button className="modal-btn save-btn" onClick={() => setShowGuide(false)}>とじる</button>
           </div>
         </div>
