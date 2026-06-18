@@ -456,19 +456,20 @@ const SakeApp = () => {
           body: JSON.stringify({ image: base64Data })
         });
         const data = await response.json();
-        const text = data.responses?.[0]?.fullTextAnnotation?.text || '';
-        const lines = [...new Set(text.split('\n').map(l => l.trim()).filter(l => l.length > 0))];
-        const categoryKeywords = ['純米大吟醸','純米吟醸','特別純米','純米酒','大吟醸','吟醸','特別本醸造','本醸造','普通酒'];
-        let detectedCategory = '';
-        for (const line of lines) {
-          for (const cat of categoryKeywords) {
-            if (line.includes(cat) && !detectedCategory) detectedCategory = cat;
-          }
-        }
-        setAnalysisResult({ name: '', category: detectedCategory, brewery: '', lines });
+        if (data.error) throw new Error(data.error);
+        // サーバー（Gemini優先・Visionフォールバック）が返す整形済みレスポンス
+        // { name, category, brewery, lines, source }
+        const validCats = ['純米大吟醸','純米吟醸','特別純米','純米酒','大吟醸','吟醸','特別本醸造','本醸造','普通酒','その他','不明'];
+        setAnalysisResult({
+          name: (data.name || '').trim(),
+          category: validCats.includes(data.category) ? data.category : '',
+          brewery: (data.brewery || '').trim(),
+          lines: Array.isArray(data.lines) ? data.lines : [],
+          source: data.source || '',
+        });
       } catch (error) {
-        console.error('Vision API error:', error);
-        alert('❌ 解析に失敗しました。手動で入力してください。');
+        console.error('ラベル読み取りエラー:', error);
+        alert('❌ 自動読み取りに失敗しました。お手数ですが手動で入力してください。');
         setAnalysisResult({ name: '', category: '', brewery: '', lines: [] });
       }
       setAnalyzing(false);
@@ -554,8 +555,14 @@ const SakeApp = () => {
               </div>
             ) : (
               <div className="confirmation-section">
-                <h3>✅ 読み取り結果から選んでください</h3>
-                <p className="confirmation-note">テキストをタップすると入力欄にセットされます</p>
+                <h3>✅ 読み取り結果を確認してください</h3>
+                <p className="confirmation-note">
+                  {analysisResult.source === 'gemini'
+                    ? 'AIがラベルを読み取りました。内容を確認・修正して登録してください。'
+                    : analysisResult.source === 'vision'
+                      ? '文字を読み取りました。下のテキストをタップして銘柄名・蔵元にセットしてください。'
+                      : 'テキストをタップすると入力欄にセットされます'}
+                </p>
                 {analysisResult.lines && analysisResult.lines.length > 0 && (
                   <div className="ocr-lines-box">
                     <p className="ocr-lines-label">📋 読み取ったテキスト（タップして使用）</p>
