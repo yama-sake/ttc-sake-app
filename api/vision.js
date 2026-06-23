@@ -3,7 +3,6 @@
 //
 // 必要な環境変数（Vercel の Settings → Environment Variables）:
 //   GEMINI_API_KEY … Gemini API のキー（一段目）
-//   VISION_API_KEY … Cloud Vision のキー（フォールバック・任意）
 
 import { readLabel } from '../lib/labelReader.js';
 
@@ -15,7 +14,6 @@ export default async function handler(req, res) {
     const { image } = req.body;
     const result = await readLabel(image, {
       geminiKey: process.env.GEMINI_API_KEY,
-      visionKey: process.env.VISION_API_KEY,
     });
     return res.status(200).json(result);
   } catch (error) {

@@ -7,7 +7,6 @@
 //
 // 必要な環境変数（Netlify の Site settings → Environment variables）:
 //   GEMINI_API_KEY … Gemini API のキー（一段目）
-//   VISION_API_KEY … Cloud Vision のキー（フォールバック・任意）
 
 import { readLabel } from '../../lib/labelReader.js';
 
@@ -19,7 +18,6 @@ export const handler = async (event) => {
     const { image } = JSON.parse(event.body || '{}');
     const result = await readLabel(image, {
       geminiKey: process.env.GEMINI_API_KEY,
-      visionKey: process.env.VISION_API_KEY,
     });
     return {
       statusCode: 200,
