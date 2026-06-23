@@ -24,6 +24,51 @@ const database = getDatabase(firebaseApp);
 const SECRET_PASSWORD = 'sake2026';
 const PASSWORD_STORAGE_KEY = 'sakeApp_authenticated';
 
+// ===== 蔵元プロフィール =====
+// 銘柄名または蔵元欄に matchKeys のいずれかが含まれると、銘柄詳細に蔵元カードが表示される
+const KURAMOTO_PROFILES = [
+  {
+    id: 'nakano',
+    matchKeys: ['若緑', '中納酒造'],
+    name: '中納酒造',
+    location: '石川県輪島市町野町',
+    founded: '嘉永2年（1849年）創業',
+    story: '代表銘柄「若緑」。2024年の能登半島地震で蔵が被災し、いま再興への道を歩んでいる。この一杯が、蔵の明日につながる。',
+    links: [
+      { label: '🔥 再興プロジェクト', url: 'https://x.gd/LbtlI' },
+    ],
+  },
+  {
+    id: 'chiyokotobuki',
+    matchKeys: ['千代寿', '千代壽'],
+    name: '千代寿虎屋',
+    location: '山形県寒河江市',
+    founded: '1922年創業（1700年創業・霞城壽の分家）',
+    story: '霊峰月山の雪解け水と山形県産米だけで醸す約700石の蔵。「豊国耕作者の会」を組織し、田植えから米作りに関わる。酒蔵見学・英語サイトあり。',
+    links: [
+      { label: '🏠 蔵元サイト', url: 'https://chiyokotobuki.com/' },
+      { label: '🛒 オンラインショップ', url: 'https://chiyokoto.official.ec/' },
+    ],
+  },
+  {
+    id: 'kamikawataisetsu',
+    matchKeys: ['上川大雪'],
+    name: '上川大雪酒造',
+    location: '北海道上川郡上川町（緑丘蔵）',
+    founded: '2017年・戦後の北海道で初の新設蔵',
+    story: '三重県の休眠蔵の酒造免許を、前例のない管轄越え移転で北海道へ。全量純米造り。「地方創生蔵」として帯広・函館にも蔵を展開する。',
+    links: [
+      { label: '🏠 蔵元サイト', url: 'https://kamikawa-taisetsu.co.jp/' },
+    ],
+  },
+];
+
+const findKuramoto = (sake) => {
+  if (!sake) return null;
+  const hay = `${sake.name || ''} ${sake.brewery || ''}`;
+  return KURAMOTO_PROFILES.find(p => p.matchKeys.some(k => hay.includes(k))) || null;
+};
+
 // ===== Firebase操作ヘルパー =====
 const dbGet = async (path) => {
   const snapshot = await get(ref(database, path));
@@ -200,6 +245,25 @@ const SakeApp = () => {
             >
               ⭐
             </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // ===== 蔵元カード =====
+  const KuramotoCard = ({ sake }) => {
+    const k = findKuramoto(sake);
+    if (!k) return null;
+    return (
+      <div className="kuramoto-card">
+        <span className="kuramoto-label">蔵元</span>
+        <h4 className="kuramoto-name">{k.name}</h4>
+        <p className="kuramoto-meta">{k.location}　{k.founded}</p>
+        <p className="kuramoto-story">{k.story}</p>
+        <div className="kuramoto-links">
+          {k.links.map(l => (
+            <a key={l.url} href={l.url} target="_blank" rel="noopener noreferrer" className="kuramoto-link-btn">{l.label}</a>
           ))}
         </div>
       </div>
@@ -491,45 +555,45 @@ const SakeApp = () => {
       if (!frontImage) { alert('表ラベルの写真を撮影してください'); return; }
       setAnalyzing(true);
       try {
-        const ocrLines = async (dataUrl) => {
+        // サーバー（Gemini優先・Visionフォールバック）が返す整形済みレスポンス: { name, category, brewery, lines, source }
+        const callVision = async (dataUrl) => {
           const res = await fetch('/api/vision', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ image: dataUrl.split(',')[1] })
           });
           const d = await res.json();
-          const t = d.responses?.[0]?.fullTextAnnotation?.text || '';
-          return t.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+          if (d.error) throw new Error(d.error);
+          return d;
         };
-        let merged = await ocrLines(frontImage);
+        const data = await callVision(frontImage);
+        // 都道府県・酒米は裏ラベルに記載が多いため、表＋裏の行テキストをまとめて走査
+        let lines = Array.isArray(data.lines) ? [...data.lines] : [];
         if (backImage) {
-          const back = await ocrLines(backImage);
-          merged = [...merged, ...back];
+          try {
+            const back = await callVision(backImage);
+            if (Array.isArray(back.lines)) lines = [...lines, ...back.lines];
+          } catch (e) { /* 裏面の読み取り失敗は無視して続行 */ }
         }
-        const lines = [...new Set(merged)];
-        const categoryKeywords = ['純米大吟醸','純米吟醸','特別純米','純米酒','大吟醸','吟醸','特別本醸造','本醸造','普通酒'];
-        let detectedCategory = '';
-        for (const line of lines) {
-          for (const cat of categoryKeywords) {
-            if (line.includes(cat) && !detectedCategory) detectedCategory = cat;
-          }
-        }
+        lines = [...new Set(lines.map(l => (l || '').trim()).filter(Boolean))];
+        const validCats = ['純米大吟醸','純米吟醸','特別純米','純米酒','大吟醸','吟醸','特別本醸造','本醸造','普通酒','その他','不明'];
+        // ▼あなたの機能を維持：行テキストから都道府県・酒米を自動検出
         let detectedPref = '';
-        for (const line of lines) {
-          for (const p of ALL_PREFECTURES) {
-            if (line.includes(p) && !detectedPref) detectedPref = p;
-          }
-        }
+        for (const line of lines) { for (const p of ALL_PREFECTURES) { if (line.includes(p) && !detectedPref) detectedPref = p; } }
         let detectedRice = '';
-        for (const line of lines) {
-          for (const r of SAKE_RICE_OPTIONS) {
-            if (line.includes(r) && !detectedRice) detectedRice = r;
-          }
-        }
-        setAnalysisResult({ name: '', category: detectedCategory, brewery: '', prefecture: detectedPref, sakeRice: detectedRice, lines });
+        for (const line of lines) { for (const r of SAKE_RICE_OPTIONS) { if (line.includes(r) && !detectedRice) detectedRice = r; } }
+        setAnalysisResult({
+          name: (data.name || '').trim(),
+          category: validCats.includes(data.category) ? data.category : '',
+          brewery: (data.brewery || '').trim(),
+          prefecture: detectedPref,
+          sakeRice: detectedRice,
+          lines,
+          source: data.source || '',
+        });
       } catch (error) {
-        console.error('Vision API error:', error);
-        alert('❌ 解析に失敗しました。手動で入力してください。');
+        console.error('ラベル読み取りエラー:', error);
+        alert('❌ 自動読み取りに失敗しました。お手数ですが手動で入力してください。');
         setAnalysisResult({ name: '', category: '', brewery: '', prefecture: '', sakeRice: '', lines: [] });
       }
       setAnalyzing(false);
@@ -641,8 +705,14 @@ const SakeApp = () => {
               </div>
             ) : (
               <div className="confirmation-section">
-                <h3>✅ 読み取り結果から選んでください</h3>
-                <p className="confirmation-note">テキストをタップすると入力欄にセットされます</p>
+                <h3>✅ 読み取り結果を確認してください</h3>
+                <p className="confirmation-note">
+                  {analysisResult.source === 'gemini'
+                    ? 'AIがラベルを読み取りました。内容を確認・修正して登録してください。'
+                    : analysisResult.source === 'vision'
+                      ? '文字を読み取りました。下のテキストをタップして銘柄名・蔵元にセットしてください。'
+                      : 'テキストをタップすると入力欄にセットされます'}
+                </p>
                 {analysisResult.lines && analysisResult.lines.length > 0 && (
                   <div className="ocr-lines-box">
                     <p className="ocr-lines-label">📋 読み取ったテキスト（タップして使用）</p>
@@ -947,6 +1017,7 @@ const SakeApp = () => {
               <div className="sake-rating-large">⭐ {selectedSake.rating.toFixed(1)}点<span className="report-count">（{reports.length}件の評価）</span></div>
             )}
           </div>
+          <KuramotoCard sake={selectedSake} />
           <div className="reports-section">
             <h4>📝 みんなの評価</h4>
             {loading ? <div className="loading-reports">読み込み中...</div>
@@ -1381,6 +1452,14 @@ const SakeApp = () => {
       <style>{`
 *{margin:0;padding:0;box-sizing:border-box}
 .sake-app{font-family:'Noto Sans JP',-apple-system,BlinkMacSystemFont,sans-serif;height:100vh;overflow:hidden}
+.kuramoto-card{margin:0 16px 16px;background:#1a4d7a;border-radius:16px;padding:20px;color:#f5f0e8;box-shadow:0 4px 16px rgba(26,77,122,0.25);text-align:left}
+.kuramoto-label{display:inline-block;font-size:11px;letter-spacing:3px;border:1px solid rgba(245,240,232,0.5);border-radius:4px;padding:2px 8px;margin-bottom:10px;color:rgba(245,240,232,0.85)}
+.kuramoto-name{font-size:20px;font-weight:600;letter-spacing:2px;margin-bottom:4px}
+.kuramoto-meta{font-size:12px;color:rgba(245,240,232,0.75);margin-bottom:10px}
+.kuramoto-story{font-size:13px;line-height:1.8;margin-bottom:14px}
+.kuramoto-links{display:flex;flex-wrap:wrap;gap:10px}
+.kuramoto-link-btn{display:inline-block;padding:10px 18px;background:rgba(245,240,232,0.95);color:#1a4d7a;border-radius:24px;font-size:13px;font-weight:600;text-decoration:none}
+.kuramoto-link-btn:active{transform:scale(0.97)}
 .splash-screen{background:#16365c !important;position:relative;display:flex;flex-direction:column;justify-content:center;align-items:center}
 .splash-screen::before{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background-image:radial-gradient(circle at 25% 25%,rgba(255,255,255,0.05) 2%,transparent 2%),radial-gradient(circle at 75% 75%,rgba(255,255,255,0.05) 2%,transparent 2%);background-size:60px 60px;opacity:0.5}
 .splash-content{text-align:center;margin-bottom:60px;position:relative;z-index:1}

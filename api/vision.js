@@ -1,29 +1,24 @@
+// Vercel Serverless Function: ラベル画像 → 銘柄情報
+// 実処理は ../lib/labelReader.js に集約（Netlify版と共通）。
+//
+// 必要な環境変数（Vercel の Settings → Environment Variables）:
+//   GEMINI_API_KEY … Gemini API のキー（一段目）
+//   VISION_API_KEY … Cloud Vision のキー（フォールバック・任意）
+
+import { readLabel } from '../lib/labelReader.js';
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
-
   try {
     const { image } = req.body;
-    const apiKey = process.env.VISION_API_KEY;
-
-    const response = await fetch(
-      `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requests: [{
-            image: { content: image },
-            features: [{ type: 'TEXT_DETECTION', maxResults: 1 }]
-          }]
-        })
-      }
-    );
-
-    const data = await response.json();
-    res.status(200).json(data);
+    const result = await readLabel(image, {
+      geminiKey: process.env.GEMINI_API_KEY,
+      visionKey: process.env.VISION_API_KEY,
+    });
+    return res.status(200).json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message });
   }
 }
