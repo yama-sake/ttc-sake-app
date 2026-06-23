@@ -1,15 +1,15 @@
-// Netlify Function: ラベル画像 → Cloud Vision OCR の「生レスポンス」をそのまま返す
-//
-// 目的: 香織さん版(main)の SakeApp.jsx を 1行も変えずに Netlify で動かすための「配線」。
-//   main の analyzeSake は d.responses[0].fullTextAnnotation.text を読むため、
-//   ここでは Vision API の生レスポンス(data)をそのまま返す（main の api/vision.js と同一契約）。
-//   ※ Gemini化や整形はしない（それは小西さんが後で別途乗せ直す）。
+// Netlify Function: ラベル画像 → 銘柄情報
+// 実処理は ../../lib/labelReader.js に集約（Vercel版と共通）。
 //
 // クライアントは /api/vision を呼ぶ。netlify.toml のリダイレクトで
-//   /api/vision → /.netlify/functions/vision に転送される（アプリ側のコードは変更不要）。
+// /api/vision → /.netlify/functions/vision に転送されるため、
+// アプリ側のコード（fetch('/api/vision')）は変更不要。
 //
-// 必要な環境変数（Netlify: Site settings → Environment variables）:
-//   VISION_API_KEY … Cloud Vision のキー
+// 必要な環境変数（Netlify の Site settings → Environment variables）:
+//   GEMINI_API_KEY … Gemini API のキー（一段目）
+//   VISION_API_KEY … Cloud Vision のキー（フォールバック・任意）
+
+import { readLabel } from '../../lib/labelReader.js';
 
 export const handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -17,27 +17,14 @@ export const handler = async (event) => {
   }
   try {
     const { image } = JSON.parse(event.body || '{}');
-    const apiKey = process.env.VISION_API_KEY;
-
-    const response = await fetch(
-      `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requests: [{
-            image: { content: image },
-            features: [{ type: 'TEXT_DETECTION', maxResults: 1 }],
-          }],
-        }),
-      }
-    );
-
-    const data = await response.json();
+    const result = await readLabel(image, {
+      geminiKey: process.env.GEMINI_API_KEY,
+      visionKey: process.env.VISION_API_KEY,
+    });
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify(result),
     };
   } catch (error) {
     return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
